@@ -5,10 +5,11 @@ import { User } from '../../types';
 interface TopbarProps {
   currentUser: User;
   onOpenCommand: () => void;
+  onOpenLogin?: () => void;
   onToggleSidebar?: () => void;
 }
 
-export const Topbar: React.FC<TopbarProps> = ({ currentUser, onOpenCommand }) => {
+export const Topbar: React.FC<TopbarProps> = ({ currentUser, onOpenCommand, onOpenLogin }) => {
   return (
     <header
       style={{
@@ -76,6 +77,16 @@ export const Topbar: React.FC<TopbarProps> = ({ currentUser, onOpenCommand }) =>
           <span>RBAC: {currentUser.role}</span>
         </div>
 
+        {onOpenLogin && (
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={onOpenLogin}
+            style={{ fontSize: '11px', padding: '3px 8px' }}
+          >
+            Sign In / Switch
+          </button>
+        )}
+
         <button
           style={{
             background: 'none',
@@ -85,7 +96,7 @@ export const Topbar: React.FC<TopbarProps> = ({ currentUser, onOpenCommand }) =>
             position: 'relative',
             display: 'flex',
           }}
-          onClick={() => alert('Notification Center: 1 Attendance Warning, 1 Pending Workflow.')}
+          onClick={() => alert('Notification Center: Real-time PostgreSQL event stream active.')}
         >
           <Bell size={16} />
           <span

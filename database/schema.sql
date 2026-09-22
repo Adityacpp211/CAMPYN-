@@ -2,12 +2,12 @@
 -- CAMPUS OPERATING SYSTEM (CampusOS)
 -- PostgreSQL Production-Grade Relational Schema
 -- ============================================================================
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Native gen_random_uuid() is supported in modern PostgreSQL
+-- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. INSTITUTIONS & CAMPUSES (Multi-Tenancy)
 CREATE TABLE institutions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code VARCHAR(32) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     domain VARCHAR(255) UNIQUE,
@@ -17,7 +17,7 @@ CREATE TABLE institutions (
 );
 
 CREATE TABLE campuses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     code VARCHAR(32) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE campuses (
 
 -- 2. ACADEMIC STRUCTURE
 CREATE TABLE departments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     code VARCHAR(32) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -39,7 +39,7 @@ CREATE TABLE departments (
 );
 
 CREATE TABLE programs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
     code VARCHAR(32) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE programs (
 );
 
 CREATE TABLE academic_years (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     name VARCHAR(64) NOT NULL,
     start_date DATE NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE academic_years (
 );
 
 CREATE TABLE semesters (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
     term VARCHAR(32) NOT NULL,
     semester_number INT NOT NULL CHECK (semester_number BETWEEN 1 AND 12),
@@ -72,7 +72,7 @@ CREATE TABLE semesters (
 );
 
 CREATE TABLE sections (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     program_id UUID NOT NULL REFERENCES programs(id) ON DELETE RESTRICT,
     semester_id UUID NOT NULL REFERENCES semesters(id) ON DELETE RESTRICT,
     name VARCHAR(32) NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE sections (
 
 -- 3. IDENTITY, ROLES & PERMISSIONS (RBAC)
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     email VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(128) UNIQUE NOT NULL,
@@ -102,7 +102,7 @@ CREATE TABLE users (
 );
 
 CREATE TABLE roles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     name VARCHAR(64) NOT NULL,
     code VARCHAR(64) NOT NULL,
@@ -113,7 +113,7 @@ CREATE TABLE roles (
 );
 
 CREATE TABLE permissions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code VARCHAR(128) UNIQUE NOT NULL,
     module VARCHAR(64) NOT NULL,
     description TEXT
@@ -132,7 +132,7 @@ CREATE TABLE user_roles (
 );
 
 CREATE TABLE user_sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) NOT NULL,
     ip_address VARCHAR(45),
@@ -143,7 +143,7 @@ CREATE TABLE user_sessions (
 
 -- 4. ACADEMIC IDENTITY (Students & Faculty)
 CREATE TABLE students (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     student_id_number VARCHAR(64) UNIQUE NOT NULL,
     roll_number VARCHAR(64) UNIQUE NOT NULL,
@@ -165,7 +165,7 @@ CREATE TABLE students (
 );
 
 CREATE TABLE faculty (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     employee_id VARCHAR(64) UNIQUE NOT NULL,
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
@@ -180,7 +180,7 @@ CREATE TABLE faculty (
 
 -- 5. COURSES & ENROLLMENT
 CREATE TABLE courses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
     code VARCHAR(32) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -192,7 +192,7 @@ CREATE TABLE courses (
 );
 
 CREATE TABLE section_courses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     section_id UUID NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
     faculty_id UUID NOT NULL REFERENCES faculty(id) ON DELETE RESTRICT,
@@ -201,7 +201,7 @@ CREATE TABLE section_courses (
 );
 
 CREATE TABLE enrollments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     section_course_id UUID NOT NULL REFERENCES section_courses(id) ON DELETE RESTRICT,
     status VARCHAR(32) DEFAULT 'enrolled' CHECK (status IN ('enrolled', 'dropped', 'completed')),
@@ -211,7 +211,7 @@ CREATE TABLE enrollments (
 
 -- 6. AUDITABLE ATTENDANCE SYSTEM
 CREATE TABLE attendance_sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     section_course_id UUID NOT NULL REFERENCES section_courses(id) ON DELETE RESTRICT,
     session_date DATE NOT NULL,
     slot_start TIME NOT NULL,
@@ -222,7 +222,7 @@ CREATE TABLE attendance_sessions (
 );
 
 CREATE TABLE attendance_records (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID NOT NULL REFERENCES attendance_sessions(id) ON DELETE CASCADE,
     student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     status VARCHAR(16) NOT NULL CHECK (status IN ('present', 'absent', 'late', 'excused')),
@@ -231,7 +231,7 @@ CREATE TABLE attendance_records (
 );
 
 CREATE TABLE attendance_corrections (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     attendance_record_id UUID NOT NULL REFERENCES attendance_records(id) ON DELETE CASCADE,
     requested_by UUID NOT NULL REFERENCES users(id),
     reviewed_by UUID REFERENCES users(id),
@@ -245,7 +245,7 @@ CREATE TABLE attendance_corrections (
 
 -- 7. ASSIGNMENTS & EXAMINATIONS
 CREATE TABLE assignments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     section_course_id UUID NOT NULL REFERENCES section_courses(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT,
@@ -256,7 +256,7 @@ CREATE TABLE assignments (
 );
 
 CREATE TABLE assignment_submissions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     assignment_id UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
     student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -270,7 +270,7 @@ CREATE TABLE assignment_submissions (
 );
 
 CREATE TABLE examinations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     semester_id UUID NOT NULL REFERENCES semesters(id) ON DELETE RESTRICT,
     title VARCHAR(255) NOT NULL,
     exam_type VARCHAR(32) NOT NULL CHECK (exam_type IN ('internal', 'midterm', 'final', 'lab')),
@@ -280,7 +280,7 @@ CREATE TABLE examinations (
 );
 
 CREATE TABLE marks_entries (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     examination_id UUID NOT NULL REFERENCES examinations(id) ON DELETE CASCADE,
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
     student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -295,7 +295,7 @@ CREATE TABLE marks_entries (
 
 -- 8. TRANSACTIONAL FEES LEDGER
 CREATE TABLE fee_structures (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     program_id UUID NOT NULL REFERENCES programs(id) ON DELETE RESTRICT,
     semester_id UUID NOT NULL REFERENCES semesters(id) ON DELETE RESTRICT,
     name VARCHAR(255) NOT NULL,
@@ -308,7 +308,7 @@ CREATE TABLE fee_structures (
 );
 
 CREATE TABLE student_fee_dues (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     fee_structure_id UUID NOT NULL REFERENCES fee_structures(id) ON DELETE RESTRICT,
     total_amount NUMERIC(10,2) NOT NULL,
@@ -319,7 +319,7 @@ CREATE TABLE student_fee_dues (
 );
 
 CREATE TABLE fee_transactions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_fee_due_id UUID NOT NULL REFERENCES student_fee_dues(id) ON DELETE RESTRICT,
     transaction_reference VARCHAR(128) UNIQUE NOT NULL,
     amount NUMERIC(10,2) NOT NULL,
@@ -333,7 +333,7 @@ CREATE TABLE fee_transactions (
 
 -- 9. APPROVALS & WORKFLOW STATE MACHINE
 CREATE TABLE approval_requests (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     requester_id UUID NOT NULL REFERENCES users(id),
     entity VARCHAR(64) NOT NULL,
@@ -349,7 +349,7 @@ CREATE TABLE approval_requests (
 
 -- 10. MANDATORY APPEND-ONLY AUDIT LOG
 CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_id UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
     actor_id UUID NOT NULL REFERENCES users(id),
     actor_email VARCHAR(255) NOT NULL,
@@ -362,6 +362,8 @@ CREATE TABLE audit_logs (
     reason TEXT,
     ip_address VARCHAR(45),
     user_agent TEXT,
+    hash VARCHAR(64),
+    previous_hash VARCHAR(64),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

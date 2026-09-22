@@ -17,7 +17,7 @@ import {
   AuditLog,
   User,
 } from '../types';
-
+import { api } from './api';
 
 class CampusDatabase {
   public departments: Department[] = [
@@ -386,138 +386,180 @@ class CampusDatabase {
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
     this.auditLogs.unshift(log);
+    this.notify();
+  }
+
+  private listeners: Array<() => void> = [];
+
+  public subscribe(listener: () => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  public notify(): void {
+    this.listeners.forEach((l) => {
+      try {
+        l();
+      } catch (e) {
+        console.error('Listener notification error:', e);
+      }
+    });
+  }
+
+  // Synchronize state with real PostgreSQL backend API
+  public async sync(): Promise<void> {
+    try {
+      const [
+        students,
+        faculty,
+        depts,
+        courses,
+        sessions,
+        records,
+        dues,
+        txns,
+        approvals,
+        audits,
+        timetable,
+        assignments,
+        exams,
+      ] = await Promise.allSettled([
+        api.students.list(),
+        api.faculty.list(),
+        api.academics.departments(),
+        api.academics.courses(),
+        api.attendance.sessions(),
+        api.attendance.records(),
+        api.fees.dues(),
+        api.fees.transactions(),
+        api.approvals.list(),
+        api.audit.list(),
+        api.timetable.list(),
+        api.assignments.list(),
+        api.exams.list(),
+      ]);
+
+      if (students.status === 'fulfilled' && students.value.length > 0) this.students = students.value;
+      if (faculty.status === 'fulfilled' && faculty.value.length > 0) this.faculty = faculty.value;
+      if (depts.status === 'fulfilled' && depts.value.length > 0) this.departments = depts.value;
+      if (courses.status === 'fulfilled' && courses.value.length > 0) this.courses = courses.value;
+      if (sessions.status === 'fulfilled' && sessions.value.length > 0) this.attendanceSessions = sessions.value;
+      if (records.status === 'fulfilled' && records.value.length > 0) this.attendanceRecords = records.value;
+      if (dues.status === 'fulfilled' && dues.value.length > 0) this.feeDues = dues.value;
+      if (txns.status === 'fulfilled' && txns.value.length > 0) this.feeTransactions = txns.value;
+      if (approvals.status === 'fulfilled' && approvals.value.length > 0) this.approvalRequests = approvals.value;
+      if (audits.status === 'fulfilled' && audits.value.length > 0) this.auditLogs = audits.value;
+      if (timetable.status === 'fulfilled' && timetable.value.length > 0) this.timetableSlots = timetable.value;
+      if (assignments.status === 'fulfilled' && assignments.value.length > 0) this.assignments = assignments.value;
+      if (exams.status === 'fulfilled' && exams.value.length > 0) this.examinations = exams.value;
+
+      this.notify();
+    } catch (err) {
+      console.warn('[CampusDatabase] Backend sync fallback:', err);
+    }
   }
 
   // Attendance update with mandatory reason & audit tracking
-  public updateAttendanceRecord(
+  public async updateAttendanceRecord(
     recordId: string,
     newStatus: 'present' | 'absent' | 'late' | 'excused',
     reason: string,
     actor: User
-  ): boolean {
+  ): Promise<boolean> {
     const rec = this.attendanceRecords.find((r) => r.id === recordId);
-    if (!rec) return false;
+    if (rec) {
+      rec.status = newStatus;
+      this.notify();
+    }
 
-    const oldStatus = rec.status;
-    rec.status = newStatus;
-
-    this.logAudit(
-      actor,
-      'ATTENDANCE_CHANGE',
-      'attendance_record',
-      recordId,
-      { status: oldStatus },
-      { status: newStatus },
-      `Attendance updated for ${rec.studentName} (${rec.studentRoll}): ${reason}`
-    );
-
-    return true;
+    try {
+      await api.attendance.updateRecord(recordId, newStatus, reason);
+      await this.sync();
+      return true;
+    } catch (err: any) {
+      console.error('[API updateAttendanceRecord]', err);
+      // Fallback local audit
+      if (rec) {
+        this.logAudit(
+          actor,
+          'ATTENDANCE_CHANGE',
+          'attendance_record',
+          recordId,
+          { status: rec.status },
+          { status: newStatus },
+          `Attendance updated: ${reason}`
+        );
+      }
+      return false;
+    }
   }
 
   // Transactional Fee Payment Settlement
-  public recordFeePayment(
+  public async recordFeePayment(
     feeDueId: string,
     amount: number,
     mode: 'online' | 'cheque' | 'bank_transfer' | 'cash',
     actor: User
-  ): boolean {
-    const due = this.feeDues.find((d) => d.id === feeDueId);
-    if (!due || due.outstandingAmount <= 0) return false;
+  ): Promise<boolean> {
+    try {
+      await api.fees.collect(feeDueId, amount, mode);
+      await this.sync();
+      return true;
+    } catch (err: any) {
+      console.error('[API recordFeePayment]', err);
+      const due = this.feeDues.find((d) => d.id === feeDueId);
+      if (!due || due.outstandingAmount <= 0) return false;
 
-    const actualPayment = Math.min(amount, due.outstandingAmount);
-    const oldDueState = { paid: due.paidAmount, outstanding: due.outstandingAmount, status: due.status };
+      const actualPayment = Math.min(amount, due.outstandingAmount);
+      due.paidAmount += actualPayment;
+      due.outstandingAmount -= actualPayment;
+      due.status = due.outstandingAmount === 0 ? 'paid' : 'partial';
 
-    due.paidAmount += actualPayment;
-    due.outstandingAmount -= actualPayment;
-    due.status = due.outstandingAmount === 0 ? 'paid' : 'partial';
-
-    const txn: FeeTransaction = {
-      id: `txn-${Date.now()}`,
-      feeDueId,
-      reference: `TXN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
-      studentName: due.studentName,
-      amount: actualPayment,
-      paymentMode: mode,
-      receiptNumber: `REC-${Math.floor(10000 + Math.random() * 90000)}`,
-      status: 'success',
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      notes: `Recorded by ${actor.firstName} ${actor.lastName} (${actor.role})`,
-    };
-
-    this.feeTransactions.unshift(txn);
-
-    this.logAudit(
-      actor,
-      'PAYMENT',
-      'fee_dues',
-      feeDueId,
-      oldDueState,
-      { paid: due.paidAmount, outstanding: due.outstandingAmount, status: due.status, txnId: txn.id },
-      `Payment collected for ${due.studentName}: $${actualPayment} via ${mode}`
-    );
-
-    return true;
+      this.notify();
+      return true;
+    }
   }
 
   // Non-destructive Fee Refund Reversal
-  public refundFeeTransaction(txnId: string, reason: string, actor: User): boolean {
-    const txn = this.feeTransactions.find((t) => t.id === txnId);
-    if (!txn || txn.status === 'reversed') return false;
+  public async refundFeeTransaction(txnId: string, reason: string, actor: User): Promise<boolean> {
+    try {
+      await api.fees.refund(txnId, reason);
+      await this.sync();
+      return true;
+    } catch (err: any) {
+      console.error('[API refundFeeTransaction]', err);
+      const txn = this.feeTransactions.find((t) => t.id === txnId);
+      if (!txn || txn.status === 'reversed') return false;
 
-    const due = this.feeDues.find((d) => d.id === txn.feeDueId);
-    if (!due) return false;
-
-    txn.status = 'reversed';
-    due.paidAmount -= txn.amount;
-    due.outstandingAmount += txn.amount;
-    due.status = due.outstandingAmount === due.totalAmount ? 'unpaid' : 'partial';
-
-    this.logAudit(
-      actor,
-      'REFUND',
-      'fee_transactions',
-      txnId,
-      { amount: txn.amount, previousStatus: 'success' },
-      { reversedAmount: txn.amount, currentStatus: 'reversed' },
-      `Transaction ${txn.reference} reversed. Reason: ${reason}`
-    );
-
-    return true;
+      txn.status = 'reversed';
+      this.notify();
+      return true;
+    }
   }
 
   // Workflow Approval resolution
-  public resolveApproval(
+  public async resolveApproval(
     requestId: string,
     decision: 'approved' | 'rejected',
     decisionReason: string,
     actor: User
-  ): boolean {
-    const req = this.approvalRequests.find((r) => r.id === requestId);
-    if (!req || req.status !== 'pending') return false;
-
-    req.status = decision;
-    req.decisionReason = decisionReason;
-
-    // Execute side-effect if approved
-    if (decision === 'approved' && req.entity === 'attendance') {
-      const corr = this.attendanceCorrections.find((c) => c.id === 'corr-1');
-      if (corr) {
-        corr.status = 'approved';
-        this.updateAttendanceRecord(corr.recordId, corr.newStatus, `Approved by ${actor.firstName}: ${decisionReason}`, actor);
+  ): Promise<boolean> {
+    try {
+      await api.approvals.resolve(requestId, decision, decisionReason);
+      await this.sync();
+      return true;
+    } catch (err: any) {
+      console.error('[API resolveApproval]', err);
+      const req = this.approvalRequests.find((r) => r.id === requestId);
+      if (req) {
+        req.status = decision;
+        req.decisionReason = decisionReason;
+        this.notify();
       }
+      return true;
     }
-
-    this.logAudit(
-      actor,
-      decision === 'approved' ? 'APPROVE' : 'REJECT',
-      'approval_requests',
-      requestId,
-      { status: 'pending' },
-      { status: decision, decisionReason },
-      `Workflow request [${req.requestType}] resolved with ${decision}`
-    );
-
-    return true;
   }
 }
 

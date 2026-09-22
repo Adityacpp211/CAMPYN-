@@ -44,18 +44,25 @@ The interface adheres to a strict monochromatic design language:
 - **npm**: v9+ (tested on v11.6.2)
 
 ### Running Locally
+
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
 
-# Start development server
-npm run dev
+# 2. Seed relational PostgreSQL database (creates tables & initial records)
+npm run seed
 
-# Build for production
-npm run build
+# 3. Run automated tests (Auth, RBAC, Transactions, Cryptographic Audit)
+npm test
+
+# 4. Start backend API server (runs on http://localhost:3001)
+npm run dev:server
+
+# 5. Start frontend development server (runs on http://localhost:5173)
+npm run dev
 ```
 
-By default, the Vite development server runs at `http://localhost:5173`.
+The frontend reverse-proxies `/api` requests to the Express backend on port 3001. Both work out of the box with zero external PostgreSQL installation required (embedded engine) or by providing a `DATABASE_URL` connection string for external PostgreSQL.
 
 ---
 
