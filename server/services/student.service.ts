@@ -1,7 +1,7 @@
 import { studentRepository } from '../repositories/student.repository';
 import { AuthUser } from '../middleware/auth';
 import { assertStudentSelfAccess } from '../middleware/resourceAuth';
-import { StudentQueryInput } from '../validators/student.validator';
+import { StudentQueryInput, CreateStudentInput, SectionTransferInput } from '../validators/student.validator';
 import { createAuditLog } from './auditService';
 
 export class StudentService {
@@ -13,7 +13,7 @@ export class StudentService {
     // ABAC IDOR assertion: If actor is student, verify they are accessing only their own profile
     await assertStudentSelfAccess(actor, idOrRoll);
 
-    const student = await studentRepository.findById(actor.institutionId, idOrRoll);
+    const student = await studentRepository.getStudentDossier(actor.institutionId, idOrRoll);
     if (!student) {
       const error: any = new Error('Student not found');
       error.statusCode = 404;
@@ -31,7 +31,43 @@ export class StudentService {
       error.code = 'RESOURCE_NOT_FOUND';
       throw error;
     }
-    return student;
+    return await studentRepository.getStudentDossier(actor.institutionId, student.id);
+  }
+
+  async createStudent(actor: AuthUser, input: CreateStudentInput) {
+    const created = await studentRepository.createStudent(actor.institutionId, input);
+
+    await createAuditLog({
+      institutionId: actor.institutionId,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      role: actor.role,
+      action: 'STUDENT_CREATED',
+      entity: 'students',
+      entityId: created.id,
+      newValues: created,
+      reason: `Student ${created.first_name} ${created.last_name} (${created.roll_number}) enrolled`,
+    });
+
+    return created;
+  }
+
+  async transferSection(actor: AuthUser, studentId: string, input: SectionTransferInput) {
+    const result = await studentRepository.transferSection(studentId, input.toSectionId, input.reason, actor.id);
+
+    await createAuditLog({
+      institutionId: actor.institutionId,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      role: actor.role,
+      action: 'SECTION_TRANSFERRED',
+      entity: 'students',
+      entityId: studentId,
+      newValues: result,
+      reason: `Section transfer: ${input.reason}`,
+    });
+
+    return result;
   }
 }
 

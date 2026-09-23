@@ -19,5 +19,11 @@ export const attendanceCorrectionSchema = z.object({
   reason: z.string().min(5, 'Reason must be at least 5 characters long'),
 });
 
+export const updateAttendanceRecordSchema = z.object({
+  status: z.enum(['present', 'absent', 'late', 'excused']),
+  reason: z.string().min(5, 'Reason must be at least 5 characters long'),
+});
+
 export type RecordAttendanceInput = z.infer<typeof recordAttendanceSchema>;
 export type AttendanceCorrectionInput = z.infer<typeof attendanceCorrectionSchema>;
+export type UpdateAttendanceRecordInput = z.infer<typeof updateAttendanceRecordSchema>;

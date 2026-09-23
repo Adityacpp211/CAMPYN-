@@ -1,104 +1,43 @@
-import { Router, Request, Response } from 'express';
-import { dbClient } from '../db';
+import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
+import { enforceTenantIsolation } from '../middleware/tenantIsolation';
+import { requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { academicController } from '../controllers/academic.controller';
+import { courseController } from '../controllers/course.controller';
 
 export const academicsRouter = Router();
 
 academicsRouter.use(authenticateToken);
+academicsRouter.use(enforceTenantIsolation);
 
-// GET /api/departments
-academicsRouter.get('/departments', async (_req: Request, res: Response): Promise<void> => {
-  const result = await dbClient.query(`
-    SELECT 
-      d.id,
-      d.code,
-      d.name,
-      COALESCE(
-        (
-          SELECT CONCAT(u.first_name, ' ', u.last_name)
-          FROM faculty f
-          JOIN users u ON f.user_id = u.id
-          WHERE f.id = d.hod_id OR (f.department_id = d.id AND f.designation ILIKE '%HOD%')
-          LIMIT 1
-        ),
-        'Unassigned'
-      ) as "hodName",
-      COALESCE(
-        (
-          SELECT COUNT(s.id)
-          FROM students s
-          JOIN programs p ON s.program_id = p.id
-          WHERE p.department_id = d.id
-        ),
-        0
-      )::int as "studentCount",
-      COALESCE(
-        (
-          SELECT COUNT(f.id)
-          FROM faculty f
-          WHERE f.department_id = d.id
-        ),
-        0
-      )::int as "facultyCount"
-    FROM departments d
-    ORDER BY d.code ASC
-  `);
+// --- DEPARTMENTS ---
+academicsRouter.get('/departments', (req, res, next) => academicController.getDepartments(req, res, next));
+academicsRouter.get('/departments/:id', (req, res, next) => academicController.getDepartmentById(req, res, next));
+academicsRouter.get('/departments/:id/stats', (req, res, next) => academicController.getDepartmentStats(req, res, next));
+academicsRouter.post('/departments', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.createDepartment(req, res, next));
+academicsRouter.put('/departments/:id', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.updateDepartment(req, res, next));
+academicsRouter.delete('/departments/:id', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.archiveDepartment(req, res, next));
 
-  res.json({
-    success: true,
-    data: result.rows,
-  });
-});
+// --- PROGRAMS ---
+academicsRouter.get('/programs', (req, res, next) => academicController.getPrograms(req, res, next));
+academicsRouter.post('/programs', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.createProgram(req, res, next));
 
-// GET /api/courses
-academicsRouter.get('/courses', async (req: Request, res: Response): Promise<void> => {
-  const { departmentId } = req.query;
+// --- ACADEMIC YEARS ---
+academicsRouter.get('/academic-years', (req, res, next) => academicController.getAcademicYears(req, res, next));
+academicsRouter.post('/academic-years', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.createAcademicYear(req, res, next));
 
-  let sql = `
-    SELECT 
-      c.id,
-      c.department_id as "departmentId",
-      c.code,
-      c.name,
-      c.credits,
-      c.course_type as "type",
-      c.syllabus,
-      COALESCE(
-        (
-          SELECT sc.faculty_id
-          FROM section_courses sc
-          WHERE sc.course_id = c.id
-          LIMIT 1
-        ),
-        ''
-      ) as "facultyId",
-      COALESCE(
-        (
-          SELECT CONCAT(u.first_name, ' ', u.last_name)
-          FROM section_courses sc
-          JOIN faculty f ON sc.faculty_id = f.id
-          JOIN users u ON f.user_id = u.id
-          WHERE sc.course_id = c.id
-          LIMIT 1
-        ),
-        'Unassigned'
-      ) as "facultyName",
-      5 as semester
-    FROM courses c
-    WHERE 1=1
-  `;
+// --- SEMESTERS ---
+academicsRouter.get('/semesters', (req, res, next) => academicController.getSemesters(req, res, next));
+academicsRouter.post('/semesters', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.createSemester(req, res, next));
 
-  const params: any[] = [];
-  if (departmentId && departmentId !== 'all') {
-    params.push(departmentId);
-    sql += ` AND (c.department_id = $${params.length} OR EXISTS (SELECT 1 FROM departments d WHERE d.id = c.department_id AND d.code = $${params.length}))`;
-  }
+// --- SECTIONS ---
+academicsRouter.get('/sections', (req, res, next) => academicController.getSections(req, res, next));
+academicsRouter.post('/sections', requireAnyPermission(['departments.manage', 'courses.create']), (req, res, next) => academicController.createSection(req, res, next));
 
-  sql += ' ORDER BY c.code ASC';
-
-  const result = await dbClient.query(sql, params);
-  res.json({
-    success: true,
-    data: result.rows,
-  });
-});
+// --- COURSES & OFFERINGS ---
+academicsRouter.get('/courses', (req, res, next) => courseController.getCourses(req, res, next));
+academicsRouter.get('/courses/offerings', (req, res, next) => courseController.getCourseOfferings(req, res, next));
+academicsRouter.get('/courses/:id', (req, res, next) => courseController.getCourseById(req, res, next));
+academicsRouter.post('/courses', requireAnyPermission(['courses.create', 'departments.manage']), (req, res, next) => courseController.createCourse(req, res, next));
+academicsRouter.put('/courses/:id', requireAnyPermission(['courses.update', 'departments.manage']), (req, res, next) => courseController.updateCourse(req, res, next));
+academicsRouter.delete('/courses/:id', requireAnyPermission(['courses.update', 'departments.manage']), (req, res, next) => courseController.archiveCourse(req, res, next));

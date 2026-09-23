@@ -441,7 +441,10 @@ class CampusDatabase {
         api.exams.list(),
       ]);
 
-      if (students.status === 'fulfilled' && students.value.length > 0) this.students = students.value;
+      if (students.status === 'fulfilled') {
+        const studentList = Array.isArray(students.value) ? students.value : (students.value as any)?.data || [];
+        if (studentList.length > 0) this.students = studentList;
+      }
       if (faculty.status === 'fulfilled' && faculty.value.length > 0) this.faculty = faculty.value;
       if (depts.status === 'fulfilled' && depts.value.length > 0) this.departments = depts.value;
       if (courses.status === 'fulfilled' && courses.value.length > 0) this.courses = courses.value;

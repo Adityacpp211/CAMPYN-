@@ -127,24 +127,58 @@ class ApiClient {
 
   // Students
   public students = {
-    list: async (params?: { search?: string; departmentId?: string; section?: string }): Promise<Student[]> => {
+    list: async (params?: { search?: string; departmentId?: string; section?: string; page?: number; limit?: number }): Promise<{ data: Student[]; pagination: any }> => {
       const query = new URLSearchParams();
       if (params?.search) query.append('search', params.search);
       if (params?.departmentId) query.append('departmentId', params.departmentId);
       if (params?.section) query.append('section', params.section);
-      return this.request<Student[]>(`/students?${query.toString()}`);
+      if (params?.page) query.append('page', params.page.toString());
+      if (params?.limit) query.append('limit', params.limit.toString());
+      const res = await this.request<any>(`/students?${query.toString()}`);
+      return {
+        data: Array.isArray(res) ? res : res.data || [],
+        pagination: res.pagination || { total: Array.isArray(res) ? res.length : 0, page: 1, limit: 50, totalPages: 1 },
+      };
     },
-    get: async (id: string): Promise<Student & { attendanceRecords: any[]; marks: any[]; fees: any[] }> => {
-      return this.request<Student & { attendanceRecords: any[]; marks: any[]; fees: any[] }>(`/students/${id}`);
+    get: async (id: string): Promise<any> => {
+      return this.request<any>(`/students/${id}`);
+    },
+    create: async (data: any): Promise<any> => {
+      return this.request('/students', { method: 'POST', body: JSON.stringify(data) });
+    },
+    transferSection: async (studentId: string, toSectionId: string, reason: string): Promise<any> => {
+      return this.request(`/students/${studentId}/transfer-section`, {
+        method: 'POST',
+        body: JSON.stringify({ toSectionId, reason }),
+      });
     },
   };
 
   // Faculty
   public faculty = {
-    list: async (params?: { departmentId?: string }): Promise<Faculty[]> => {
+    list: async (params?: { departmentId?: string; search?: string; page?: number; limit?: number }): Promise<Faculty[]> => {
       const query = new URLSearchParams();
       if (params?.departmentId) query.append('departmentId', params.departmentId);
-      return this.request<Faculty[]>(`/faculty?${query.toString()}`);
+      if (params?.search) query.append('search', params.search);
+      if (params?.page) query.append('page', params.page.toString());
+      if (params?.limit) query.append('limit', params.limit.toString());
+      const res = await this.request<any>(`/faculty?${query.toString()}`);
+      return Array.isArray(res) ? res : res.data || [];
+    },
+    get: async (id: string): Promise<any> => {
+      return this.request<any>(`/faculty/${id}`);
+    },
+    create: async (data: any): Promise<any> => {
+      return this.request('/faculty', { method: 'POST', body: JSON.stringify(data) });
+    },
+    update: async (id: string, data: any): Promise<any> => {
+      return this.request(`/faculty/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    },
+    assign: async (data: { facultyId: string; courseId: string; sectionId: string }): Promise<any> => {
+      return this.request('/faculty/assign', { method: 'POST', body: JSON.stringify(data) });
+    },
+    unassign: async (sectionCourseId: string): Promise<any> => {
+      return this.request(`/faculty/unassign/${sectionCourseId}`, { method: 'DELETE' });
     },
   };
 
@@ -153,21 +187,79 @@ class ApiClient {
     departments: async (): Promise<Department[]> => {
       return this.request<Department[]>('/academics/departments');
     },
-    courses: async (params?: { departmentId?: string }): Promise<Course[]> => {
+    departmentStats: async (id: string): Promise<any> => {
+      return this.request<any>(`/academics/departments/${id}/stats`);
+    },
+    createDepartment: async (data: any): Promise<any> => {
+      return this.request('/academics/departments', { method: 'POST', body: JSON.stringify(data) });
+    },
+    updateDepartment: async (id: string, data: any): Promise<any> => {
+      return this.request(`/academics/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    },
+    archiveDepartment: async (id: string): Promise<any> => {
+      return this.request(`/academics/departments/${id}`, { method: 'DELETE' });
+    },
+    programs: async (departmentId?: string): Promise<any[]> => {
+      const q = departmentId ? `?departmentId=${departmentId}` : '';
+      return this.request<any[]>(`/academics/programs${q}`);
+    },
+    academicYears: async (): Promise<any[]> => {
+      return this.request<any[]>('/academics/academic-years');
+    },
+    semesters: async (academicYearId?: string): Promise<any[]> => {
+      const q = academicYearId ? `?academicYearId=${academicYearId}` : '';
+      return this.request<any[]>(`/academics/semesters${q}`);
+    },
+    sections: async (programId?: string, semesterId?: string): Promise<any[]> => {
+      const query = new URLSearchParams();
+      if (programId) query.append('programId', programId);
+      if (semesterId) query.append('semesterId', semesterId);
+      return this.request<any[]>(`/academics/sections?${query.toString()}`);
+    },
+    courses: async (params?: { departmentId?: string; search?: string; page?: number; limit?: number }): Promise<Course[]> => {
       const query = new URLSearchParams();
       if (params?.departmentId) query.append('departmentId', params.departmentId);
-      return this.request<Course[]>(`/academics/courses?${query.toString()}`);
+      if (params?.search) query.append('search', params.search);
+      if (params?.page) query.append('page', params.page.toString());
+      if (params?.limit) query.append('limit', params.limit.toString());
+      const res = await this.request<any>(`/academics/courses?${query.toString()}`);
+      return Array.isArray(res) ? res : res.data || [];
+    },
+    createCourse: async (data: any): Promise<any> => {
+      return this.request('/academics/courses', { method: 'POST', body: JSON.stringify(data) });
+    },
+    updateCourse: async (id: string, data: any): Promise<any> => {
+      return this.request(`/academics/courses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    },
+    courseOfferings: async (courseId?: string, sectionId?: string): Promise<any[]> => {
+      const query = new URLSearchParams();
+      if (courseId) query.append('courseId', courseId);
+      if (sectionId) query.append('sectionId', sectionId);
+      return this.request<any[]>(`/academics/courses/offerings?${query.toString()}`);
     },
   };
 
   // Attendance
   public attendance = {
-    sessions: async (): Promise<AttendanceSession[]> => {
-      return this.request<AttendanceSession[]>('/attendance/sessions');
+    sessions: async (options?: { sectionCourseId?: string; date?: string; facultyId?: string }): Promise<AttendanceSession[]> => {
+      const query = new URLSearchParams();
+      if (options?.sectionCourseId) query.append('sectionCourseId', options.sectionCourseId);
+      if (options?.date) query.append('date', options.date);
+      if (options?.facultyId) query.append('facultyId', options.facultyId);
+      return this.request<AttendanceSession[]>(`/attendance/sessions?${query.toString()}`);
     },
     records: async (sessionId?: string): Promise<AttendanceRecord[]> => {
       const query = sessionId ? `?sessionId=${sessionId}` : '';
       return this.request<AttendanceRecord[]>(`/attendance/records${query}`);
+    },
+    recordSession: async (data: { sectionCourseId: string; sessionDate: string; slotStart: string; slotEnd: string; records: { studentId: string; status: string }[] }): Promise<any> => {
+      return this.request('/attendance/sessions', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    lockSession: async (sessionId: string): Promise<any> => {
+      return this.request(`/attendance/sessions/${sessionId}/lock`, { method: 'POST' });
     },
     updateRecord: async (recordId: string, status: string, reason: string): Promise<any> => {
       return this.request(`/attendance/records/${recordId}`, {
@@ -175,11 +267,19 @@ class ApiClient {
         body: JSON.stringify({ status, reason }),
       });
     },
-    submitCorrection: async (recordId: string, newStatus: string, reason: string): Promise<any> => {
+    submitCorrection: async (attendanceRecordId: string, newStatus: string, reason: string): Promise<any> => {
       return this.request('/attendance/corrections', {
         method: 'POST',
-        body: JSON.stringify({ recordId, newStatus, reason }),
+        body: JSON.stringify({ attendanceRecordId, newStatus, reason }),
       });
+    },
+    getStudentStats: async (studentId?: string): Promise<any> => {
+      const q = studentId ? `?studentId=${studentId}` : '';
+      return this.request<any>(`/attendance/stats${q}`);
+    },
+    getDepartmentStats: async (departmentId?: string): Promise<any> => {
+      const q = departmentId ? `?departmentId=${departmentId}` : '';
+      return this.request<any>(`/attendance/department-stats${q}`);
     },
   };
 
@@ -234,8 +334,20 @@ class ApiClient {
 
   // Timetable
   public timetable = {
-    list: async (): Promise<TimetableSlot[]> => {
-      return this.request<TimetableSlot[]>('/timetable');
+    list: async (params?: { sectionId?: string; facultyId?: string; roomNumber?: string; dayOfWeek?: string }): Promise<TimetableSlot[]> => {
+      const query = new URLSearchParams();
+      if (params?.sectionId) query.append('sectionId', params.sectionId);
+      if (params?.facultyId) query.append('facultyId', params.facultyId);
+      if (params?.roomNumber) query.append('roomNumber', params.roomNumber);
+      if (params?.dayOfWeek) query.append('dayOfWeek', params.dayOfWeek);
+      const res = await this.request<any>(`/timetable?${query.toString()}`);
+      return Array.isArray(res) ? res : res.data || [];
+    },
+    createSlot: async (data: any): Promise<any> => {
+      return this.request('/timetable', { method: 'POST', body: JSON.stringify(data) });
+    },
+    deleteSlot: async (id: string): Promise<any> => {
+      return this.request(`/timetable/${id}`, { method: 'DELETE' });
     },
   };
 

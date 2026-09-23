@@ -122,6 +122,7 @@ export interface AttendanceCorrection {
 export interface TimetableSlot {
   id: string;
   day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
+  dayOfWeek?: string;
   timeSlot: string;
   courseCode: string;
   courseName: string;
@@ -131,6 +132,7 @@ export interface TimetableSlot {
   hasConflict?: boolean;
   conflictDetails?: string;
 }
+
 
 export interface Assignment {
   id: string;

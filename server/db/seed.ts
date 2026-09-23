@@ -14,6 +14,8 @@ export async function seedDatabase(): Promise<void> {
     // 1. Clean existing records if any
     await tx.query('DELETE FROM audit_logs');
     await tx.query('DELETE FROM approval_requests');
+    await tx.query('DELETE FROM timetable_slots');
+    await tx.query('DELETE FROM section_transfers');
     await tx.query('DELETE FROM fee_transactions');
     await tx.query('DELETE FROM student_fee_dues');
     await tx.query('DELETE FROM fee_structures');
@@ -427,7 +429,25 @@ export async function seedDatabase(): Promise<void> {
       `, [examId, courseMap['CS301'], studentMap[m.roll], m.marks, m.grade, facultyJenkinsId]);
     }
 
-    // 14. Governance Approvals
+    // 14. Timetable Slots
+    const timetableData = [
+      { code: 'CS301', day: 'Monday', start: '09:00:00', end: '10:00:00', room: 'LH-101', type: 'lecture' },
+      { code: 'CS302', day: 'Monday', start: '10:15:00', end: '11:15:00', room: 'LH-102', type: 'lecture' },
+      { code: 'CS303', day: 'Monday', start: '11:30:00', end: '12:30:00', room: 'LH-101', type: 'lecture' },
+      { code: 'CS304', day: 'Tuesday', start: '09:00:00', end: '10:00:00', room: 'LH-103', type: 'lecture' },
+      { code: 'CS305', day: 'Wednesday', start: '14:00:00', end: '16:00:00', room: 'LAB-3', type: 'lab' },
+    ];
+
+    for (const tt of timetableData) {
+      if (secCourseMap[tt.code]) {
+        await tx.query(`
+          INSERT INTO timetable_slots (institution_id, section_course_id, day_of_week, start_time, end_time, room_number, slot_type)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [instId, secCourseMap[tt.code], tt.day, tt.start, tt.end, tt.room, tt.type]);
+      }
+    }
+
+    // 15. Governance Approvals
     await tx.query(`
       INSERT INTO approval_requests (institution_id, requester_id, entity, entity_id, request_type, reason, status)
       VALUES ($1, $2, 'attendance', $3, 'Attendance Regularization', 'Infirmary slip validated for absence on 2026-09-22', 'pending')
