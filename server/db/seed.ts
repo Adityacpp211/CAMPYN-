@@ -399,7 +399,7 @@ export async function seedDatabase(): Promise<void> {
         await tx.query(`
           INSERT INTO fee_transactions (student_fee_due_id, transaction_reference, amount, payment_mode, status, processed_by, receipt_number, notes)
           VALUES ($1, $2, $3, 'online', 'success', $4, $5, 'Payment verified via gateway')
-        `, [dueId, `TXN-2026-${Math.floor(1000 + Math.random() * 9000)}`, d.paid, accountantId, `REC-2026-${Math.floor(10000 + Math.random() * 90000)}`]);
+        `, [dueId, `TXN-2026-${d.roll}`, d.paid, accountantId, `REC-2026-${d.roll}`]);
       }
     }
 

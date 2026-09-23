@@ -5,6 +5,7 @@ import { dbClient } from '../db';
 
 export interface AuthUser {
   id: string;
+  institutionId: string;
   email: string;
   username: string;
   firstName: string;
@@ -46,10 +47,10 @@ export async function authenticateToken(
   try {
     const payload = jwt.verify(token, config.jwtSecret) as { userId: string };
 
-    // Fetch user details, role and permissions from DB
+    // Fetch user details, role, institution and permissions from DB
     const userRes = await dbClient.query(`
       SELECT 
-        u.id, u.email, u.username, u.first_name, u.last_name, u.is_active,
+        u.id, u.institution_id, u.email, u.username, u.first_name, u.last_name, u.is_active,
         r.code as role_code,
         COALESCE(
           (
@@ -80,6 +81,7 @@ export async function authenticateToken(
     const row = userRes.rows[0];
     req.user = {
       id: row.id,
+      institutionId: row.institution_id,
       email: row.email,
       username: row.username,
       firstName: row.first_name,

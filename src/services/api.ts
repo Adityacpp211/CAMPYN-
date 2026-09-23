@@ -17,7 +17,7 @@ import {
   AuditLog,
 } from '../types';
 
-const API_BASE = '/api';
+const API_BASE = '/api/v1';
 
 class ApiClient {
   private token: string | null = null;

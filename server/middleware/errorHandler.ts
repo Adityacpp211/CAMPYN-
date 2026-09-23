@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 
 export function errorHandler(
   err: any,
@@ -6,7 +7,19 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
-  console.error('[API Error]', err);
+  // Handle Zod validation errors cleanly
+  if (err instanceof ZodError || err.name === 'ZodError') {
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: err.issues?.[0]?.message || 'Input validation failed',
+        details: err.issues || err.errors,
+        requestId: _req.id,
+      },
+    });
+    return;
+  }
 
   const statusCode = err.statusCode || err.status || 500;
   const message = err.message || 'Internal Server Error';
@@ -17,6 +30,7 @@ export function errorHandler(
     error: {
       code,
       message,
+      requestId: _req.id,
       ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {}),
     },
   });

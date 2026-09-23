@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
-import { db } from '../../services/db';
+import { useAttendance } from '../../hooks/useAttendance';
 import { User, AttendanceRecord } from '../../types';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
-import { UserCheck, ShieldAlert, Check, X, AlertTriangle, History } from 'lucide-react';
+import { ShieldAlert, History, Loader2 } from 'lucide-react';
+import { api } from '../../services/api';
 
 interface AttendanceViewProps {
   currentUser: User;
 }
 
-export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) => {
-  const [selectedCourse, setSelectedCourse] = useState('CS301');
-  const [sessionDate, setSessionDate] = useState('2026-09-22');
-  const [records, setRecords] = useState(db.attendanceRecords);
+export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser: _currentUser }) => {
+  const { records, loading, error, updateRecord } = useAttendance();
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [newStatus, setNewStatus] = useState<'present' | 'absent' | 'late' | 'excused'>('present');
   const [editReason, setEditReason] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleOpenEdit = (rec: AttendanceRecord) => {
     setEditingRecord(rec);
@@ -24,15 +25,31 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
     setEditReason('');
   };
 
-  const handleCommitEdit = () => {
+  const handleCommitEdit = async () => {
     if (!editingRecord || !editReason.trim()) {
-      alert('A valid justification reason is mandatory for auditable attendance edits.');
+      alert('A valid justification reason (min 5 characters) is mandatory for auditable attendance edits.');
       return;
     }
 
-    db.updateAttendanceRecord(editingRecord.id, newStatus, editReason, currentUser);
-    setRecords([...db.attendanceRecords]);
-    setEditingRecord(null);
+    try {
+      setIsSubmitting(true);
+      await updateRecord(editingRecord.id, newStatus, editReason);
+      setEditingRecord(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update attendance record');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openAuditHistory = async () => {
+    try {
+      const logs = await api.audit.list({ action: 'ATTENDANCE_CHANGE' });
+      setAuditLogs(logs);
+      setShowHistory(true);
+    } catch (err: any) {
+      alert(err.message || 'Failed to load audit trail');
+    }
   };
 
   const presentCount = records.filter((r) => r.status === 'present').length;
@@ -52,19 +69,17 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-outline btn-sm" onClick={() => setShowHistory(true)}>
-            <History size={14} /> Audit Trail ({db.auditLogs.filter((l) => l.action === 'ATTENDANCE_CHANGE').length})
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              alert('All students marked present in memory. Any individual change will prompt audit justification.');
-            }}
-          >
-            Mark All Present
+          <button className="btn btn-outline btn-sm" onClick={openAuditHistory}>
+            <History size={14} /> Audit Trail
           </button>
         </div>
       </div>
+
+      {error && (
+        <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '13px' }}>
+          {error}
+        </div>
+      )}
 
       {/* Metrics Banner */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
@@ -77,7 +92,7 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
         <div className="surface-card">
           <span className="text-secondary" style={{ fontSize: '11px' }}>PRESENT TODAY</span>
           <div style={{ fontSize: '22px', fontWeight: 600, color: '#81C784', marginTop: '4px' }}>
-            {presentCount} ({((presentCount / records.length) * 100).toFixed(0)}%)
+            {presentCount} ({records.length > 0 ? ((presentCount / records.length) * 100).toFixed(0) : 0}%)
           </div>
         </div>
         <div className="surface-card">
@@ -90,66 +105,67 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
 
       {/* Attendance Roster Grid */}
       <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Roll Number</th>
-              <th>Student Name</th>
-              <th>Recorded Status</th>
-              <th>Term Average</th>
-              <th>Recorded At</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {records.map((r) => {
-              const student = db.students.find((s) => s.id === r.studentId);
-              const isShortage = (student?.attendancePercentage || 0) < 75;
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px', color: 'var(--color-medium-gray)' }}>
+            <Loader2 size={24} className="animate-spin" />
+            <span style={{ marginLeft: '10px', fontSize: '13px' }}>Loading session roster...</span>
+          </div>
+        )}
 
-              return (
-                <tr key={r.id}>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-white)' }}>
-                    {r.studentRoll}
-                  </td>
-                  <td style={{ fontWeight: 500, color: 'var(--color-off-white)' }}>
-                    {r.studentName}
-                  </td>
-                  <td>
-                    <Badge
-                      variant={
-                        r.status === 'present'
-                          ? 'success'
-                          : r.status === 'absent'
-                          ? 'danger'
-                          : 'warning'
-                      }
-                    >
-                      {r.status.toUpperCase()}
-                    </Badge>
-                  </td>
-                  <td>
-                    <span style={{ fontFamily: 'var(--font-mono)', color: isShortage ? '#E57373' : 'var(--color-off-white)' }}>
-                      {student?.attendancePercentage}%
-                    </span>
-                    {isShortage && (
-                      <Badge variant="danger" style={{ marginLeft: '6px' }}>
-                        Shortage
-                      </Badge>
-                    )}
-                  </td>
-                  <td style={{ fontSize: '12px', color: 'var(--color-medium-gray)' }}>
-                    {r.recordedAt}
-                  </td>
-                  <td>
-                    <button className="btn btn-outline btn-sm" onClick={() => handleOpenEdit(r)}>
-                      Edit Record
-                    </button>
+        {!loading && (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Roll Number</th>
+                <th>Student Name</th>
+                <th>Recorded Status</th>
+                <th>Recorded At</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-medium-gray)' }}>
+                    No records found for this session.
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ) : (
+                records.map((r) => (
+                  <tr key={r.id}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-white)' }}>
+                      {r.studentRoll}
+                    </td>
+                    <td style={{ fontWeight: 500, color: 'var(--color-off-white)' }}>
+                      {r.studentName}
+                    </td>
+                    <td>
+                      <Badge
+                        variant={
+                          r.status === 'present'
+                            ? 'success'
+                            : r.status === 'absent'
+                            ? 'danger'
+                            : 'warning'
+                        }
+                      >
+                        {r.status.toUpperCase()}
+                      </Badge>
+                    </td>
+                    <td style={{ fontSize: '12px', color: 'var(--color-medium-gray)' }}>
+                      {new Date(r.recordedAt).toLocaleString()}
+                    </td>
+                    <td>
+                      <button className="btn btn-outline btn-sm" onClick={() => handleOpenEdit(r)}>
+                        Edit Record
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Mandatory Audit Modification Modal */}
@@ -200,7 +216,7 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
               </label>
               <textarea
                 rows={3}
-                placeholder="State the official rationale (e.g. Student submitted signed medical certificate or authorized university competition form)..."
+                placeholder="State the official rationale (e.g. Student submitted signed medical certificate)..."
                 value={editReason}
                 onChange={(e) => setEditReason(e.target.value)}
                 className="input-base"
@@ -209,11 +225,11 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-              <button className="btn btn-outline" onClick={() => setEditingRecord(null)}>
+              <button className="btn btn-outline" onClick={() => setEditingRecord(null)} disabled={isSubmitting}>
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={handleCommitEdit}>
-                Commit with Audit Signature
+              <button className="btn btn-primary" onClick={handleCommitEdit} disabled={isSubmitting}>
+                {isSubmitting ? 'Signing...' : 'Commit with Audit Signature'}
               </button>
             </div>
           </div>
@@ -230,9 +246,12 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
           maxWidth="640px"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {db.auditLogs
-              .filter((l) => l.action === 'ATTENDANCE_CHANGE')
-              .map((log) => (
+            {auditLogs.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-medium-gray)', fontSize: '13px' }}>
+                No attendance adjustment audit logs found.
+              </div>
+            ) : (
+              auditLogs.map((log) => (
                 <div
                   key={log.id}
                   style={{
@@ -257,7 +276,8 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({ currentUser }) =
                     Diff: {JSON.stringify(log.oldValues)} ➔ {JSON.stringify(log.newValues)}
                   </div>
                 </div>
-              ))}
+              ))
+            )}
           </div>
         </Modal>
       )}

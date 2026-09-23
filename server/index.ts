@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { config } from './config';
+import { requestIdMiddleware } from './middleware/requestId';
+import { apiLimiter, authLimiter } from './middleware/rateLimiter';
 import { errorHandler } from './middleware/errorHandler';
 import { authRouter } from './routes/auth.routes';
 import { studentsRouter } from './routes/students.routes';
@@ -15,7 +17,7 @@ import { timetableRouter } from './routes/timetable.routes';
 import { assignmentsRouter } from './routes/assignments.routes';
 import { examsRouter } from './routes/exams.routes';
 import { dashboardRouter } from './routes/dashboard.routes';
-import { getDb } from './db';
+import { getDb, dbClient } from './db';
 import { runMigrations } from './db/migrate';
 
 export const app = express();
@@ -26,30 +28,59 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(express.json());
+app.use(requestIdMiddleware);
 
-// API Health Check
-app.get('/api/health', async (_req, res) => {
+// Rate limiting
+app.use('/api', apiLimiter);
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/auth/login', authLimiter);
+
+// Health and Readiness Check Endpoints
+app.get(['/health', '/api/health'], async (_req, res) => {
   res.json({
     status: 'healthy',
-    system: 'CampusOS Enterprise Server',
-    database: 'PostgreSQL Relational Engine',
+    system: 'CAMPYN V2 Enterprise Operating System',
     timestamp: new Date().toISOString(),
   });
 });
 
-// Mount domain routes
-app.use('/api/auth', authRouter);
-app.use('/api/students', studentsRouter);
-app.use('/api/faculty', facultyRouter);
-app.use('/api/academics', academicsRouter);
-app.use('/api/attendance', attendanceRouter);
-app.use('/api/fees', feesRouter);
-app.use('/api/approvals', approvalsRouter);
-app.use('/api/audit', auditRouter);
-app.use('/api/timetable', timetableRouter);
-app.use('/api/assignments', assignmentsRouter);
-app.use('/api/exams', examsRouter);
-app.use('/api/dashboard', dashboardRouter);
+app.get(['/readiness', '/api/readiness'], async (_req, res) => {
+  try {
+    // Probe database connectivity
+    await dbClient.query('SELECT 1');
+    res.json({
+      status: 'ready',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      status: 'not_ready',
+      database: 'disconnected',
+      error: err.message,
+    });
+  }
+});
+
+// Domain router registration function
+function mountRoutes(prefix: string) {
+  app.use(`${prefix}/auth`, authRouter);
+  app.use(`${prefix}/students`, studentsRouter);
+  app.use(`${prefix}/faculty`, facultyRouter);
+  app.use(`${prefix}/academics`, academicsRouter);
+  app.use(`${prefix}/attendance`, attendanceRouter);
+  app.use(`${prefix}/fees`, feesRouter);
+  app.use(`${prefix}/approvals`, approvalsRouter);
+  app.use(`${prefix}/audit`, auditRouter);
+  app.use(`${prefix}/timetable`, timetableRouter);
+  app.use(`${prefix}/assignments`, assignmentsRouter);
+  app.use(`${prefix}/exams`, examsRouter);
+  app.use(`${prefix}/dashboard`, dashboardRouter);
+}
+
+// Mount versioned API routes (/api/v1) and legacy routes (/api)
+mountRoutes('/api/v1');
+mountRoutes('/api');
 
 // Global Error Handler
 app.use(errorHandler);
@@ -60,7 +91,7 @@ export async function startServer(): Promise<any> {
 
   return new Promise((resolve) => {
     const server = app.listen(config.port, () => {
-      console.log(`[CampusOS API] Running on http://localhost:${config.port} (${config.nodeEnv})`);
+      console.log(`[CAMPYN V2 API] Running on http://localhost:${config.port} (${config.nodeEnv})`);
       resolve(server);
     });
   });
@@ -69,7 +100,7 @@ export async function startServer(): Promise<any> {
 // Direct execution
 if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
   startServer().catch((err) => {
-    console.error('[CampusOS API] Server startup error:', err);
+    console.error('[CAMPYN V2 API] Server startup error:', err);
     process.exit(1);
   });
 }

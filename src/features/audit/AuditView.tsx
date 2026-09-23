@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../../services/db';
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../services/api';
 import { AuditLog } from '../../types';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
-import { ShieldCheck, Search, Terminal, Eye, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Search, Eye, ShieldAlert, CheckCircle2, Loader2 } from 'lucide-react';
 
 export const AuditView: React.FC = () => {
-  const [logs, setLogs] = useState(db.auditLogs);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [inspectLog, setInspectLog] = useState<AuditLog | null>(null);
   const [verifyState, setVerifyState] = useState<{
@@ -18,12 +18,21 @@ export const AuditView: React.FC = () => {
     error?: string;
   }>({ loading: false, verified: false });
 
-  useEffect(() => {
-    const unsub = db.subscribe(() => {
-      setLogs([...db.auditLogs]);
-    });
-    return unsub;
+  const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.audit.list();
+      setLogs(data);
+    } catch (err: any) {
+      console.error('Failed to load audit trail:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
 
   const handleVerifyIntegrity = async () => {
     setVerifyState({ loading: true, verified: false });
@@ -131,154 +140,126 @@ export const AuditView: React.FC = () => {
 
       {/* Audit Logs Table */}
       <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Timestamp</th>
-              <th>Action</th>
-              <th>Actor & Role</th>
-              <th>Target Entity</th>
-              <th>Documented Rationale / Reason</th>
-              <th>SHA-256 Hash Link</th>
-              <th>Diff</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredLogs.map((log) => (
-              <tr key={log.id}>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-light-gray)' }}>
-                  {log.timestamp}
-                </td>
-                <td>
-                  <Badge
-                    variant={
-                      log.action.includes('CHANGE') || log.action === 'UPDATE'
-                        ? 'warning'
-                        : log.action === 'APPROVE' || log.action === 'PAYMENT'
-                        ? 'success'
-                        : log.action === 'DELETE' || log.action === 'REFUND' || log.action === 'REJECT'
-                        ? 'danger'
-                        : 'default'
-                    }
-                  >
-                    {log.action}
-                  </Badge>
-                </td>
-                <td>
-                  <div style={{ fontWeight: 500, color: 'var(--color-white)' }}>{log.actorEmail}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)' }}>{log.role}</div>
-                </td>
-                <td>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-off-white)' }}>
-                    {log.entity}
-                  </span>
-                </td>
-                <td style={{ maxWidth: '300px', fontSize: '12px', color: 'var(--color-light-gray)' }}>
-                  {log.reason || '—'}
-                </td>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--color-medium-gray)' }}>
-                  {(log as any).hash ? `${(log as any).hash.substring(0, 16)}...` : 'genesis'}
-                </td>
-                <td>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => setInspectLog(log)}
-                    style={{ padding: '3px 8px' }}
-                  >
-                    <Eye size={12} />
-                  </button>
-                </td>
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px', color: 'var(--color-medium-gray)' }}>
+            <Loader2 size={24} className="animate-spin" />
+            <span style={{ marginLeft: '10px', fontSize: '13px' }}>Loading immutable audit stream...</span>
+          </div>
+        )}
+
+        {!loading && (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Actor & Role</th>
+                <th>Target Entity</th>
+                <th>Documented Rationale / Reason</th>
+                <th>SHA-256 Hash Link</th>
+                <th>Diff</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-medium-gray)' }}>
+                    No audit logs found matching criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-light-gray)' }}>
+                      {log.timestamp}
+                    </td>
+                    <td>
+                      <Badge
+                        variant={
+                          log.action.includes('CHANGE') || log.action === 'UPDATE'
+                            ? 'warning'
+                            : log.action === 'APPROVE' || log.action === 'PAYMENT'
+                            ? 'success'
+                            : log.action === 'DELETE' || log.action === 'REFUND' || log.action === 'REJECT'
+                            ? 'danger'
+                            : 'default'
+                        }
+                      >
+                        {log.action}
+                      </Badge>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 500, color: 'var(--color-white)' }}>{log.actorEmail}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)' }}>{log.role}</div>
+                    </td>
+                    <td>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-off-white)' }}>
+                        {log.entity}
+                      </span>
+                    </td>
+                    <td style={{ maxWidth: '300px', fontSize: '12px', color: 'var(--color-light-gray)' }}>
+                      {log.reason || '—'}
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--color-medium-gray)' }}>
+                      {(log as any).hash ? `${(log as any).hash.substring(0, 16)}...` : 'genesis'}
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => setInspectLog(log)}
+                        style={{ padding: '4px 8px' }}
+                      >
+                        <Eye size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      {/* Inspect Diff Modal */}
+      {/* Inspect Log Entry Modal */}
       {inspectLog && (
         <Modal
-          isOpen={true}
+          isOpen={!!inspectLog}
           onClose={() => setInspectLog(null)}
-          title={`Audit Event Inspection: ${inspectLog.action} (${inspectLog.id})`}
+          title={`Audit Payload Inspector: ${inspectLog.action}`}
+          subtitle={`Entity: ${inspectLog.entity} • ID: ${inspectLog.entityId}`}
+          maxWidth="620px"
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '10px',
-                padding: '12px',
-                backgroundColor: 'var(--color-charcoal)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '12px',
-              }}
-            >
-              <div>
-                <span style={{ color: 'var(--color-medium-gray)' }}>Actor:</span> {inspectLog.actorEmail}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div className="surface-card">
+                <span className="text-secondary" style={{ fontSize: '10px' }}>ACTOR</span>
+                <div style={{ color: 'var(--color-white)', fontWeight: 500, marginTop: '2px' }}>
+                  {inspectLog.actorEmail}
+                </div>
               </div>
-              <div>
-                <span style={{ color: 'var(--color-medium-gray)' }}>Role:</span> {inspectLog.role}
-              </div>
-              <div>
-                <span style={{ color: 'var(--color-medium-gray)' }}>Target Entity:</span> {inspectLog.entity} (ID: {inspectLog.entityId})
-              </div>
-              <div>
-                <span style={{ color: 'var(--color-medium-gray)' }}>IP Address:</span> {inspectLog.ipAddress}
-              </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <span style={{ color: 'var(--color-medium-gray)' }}>Cryptographic Hash:</span>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#81C784', wordBreak: 'break-all', marginTop: '2px' }}>
-                  {(inspectLog as any).hash || 'Genesis block signature verified'}
+              <div className="surface-card">
+                <span className="text-secondary" style={{ fontSize: '10px' }}>ROLE AT EVENT</span>
+                <div style={{ color: 'var(--color-white)', fontWeight: 500, marginTop: '2px' }}>
+                  {inspectLog.role}
                 </div>
               </div>
             </div>
 
-            {/* JSON Before / After Diffs */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-light-gray)', marginBottom: '6px' }}>
-                  Previous State
-                </div>
-                <pre
-                  style={{
-                    backgroundColor: 'var(--color-black)',
-                    padding: '12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-border-gray)',
-                    color: '#E57373',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                  }}
-                >
-                  {inspectLog.oldValues ? JSON.stringify(inspectLog.oldValues, null, 2) : 'null (Created)'}
-                </pre>
-              </div>
-
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-light-gray)', marginBottom: '6px' }}>
-                  Mutated State
-                </div>
-                <pre
-                  style={{
-                    backgroundColor: 'var(--color-black)',
-                    padding: '12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-border-gray)',
-                    color: '#81C784',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                  }}
-                >
-                  {inspectLog.newValues ? JSON.stringify(inspectLog.newValues, null, 2) : 'null (Deleted)'}
-                </pre>
-              </div>
+            <div>
+              <span className="text-secondary" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>PREVIOUS VALUES</span>
+              <pre style={{ margin: 0, padding: '10px', backgroundColor: 'var(--color-black)', borderRadius: 'var(--radius-sm)', color: '#FF8A80', fontFamily: 'var(--font-mono)', overflowX: 'auto' }}>
+                {JSON.stringify(inspectLog.oldValues || {}, null, 2)}
+              </pre>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+            <div>
+              <span className="text-secondary" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>NEW COMMITTED VALUES</span>
+              <pre style={{ margin: 0, padding: '10px', backgroundColor: 'var(--color-black)', borderRadius: 'var(--radius-sm)', color: '#81C784', fontFamily: 'var(--font-mono)', overflowX: 'auto' }}>
+                {JSON.stringify(inspectLog.newValues || {}, null, 2)}
+              </pre>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
               <button className="btn btn-secondary" onClick={() => setInspectLog(null)}>
                 Close Inspector
               </button>

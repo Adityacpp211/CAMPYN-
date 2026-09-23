@@ -1,97 +1,95 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { dbClient, withTransaction } from '../db';
 import { authenticateToken } from '../middleware/auth';
 import { requirePermission, requireAnyPermission } from '../middleware/rbac';
+import { enforceTenantIsolation } from '../middleware/tenantIsolation';
 import { createAuditLog } from '../services/auditService';
+import { attendanceController } from '../controllers/attendance.controller';
 
 export const attendanceRouter = Router();
 
 attendanceRouter.use(authenticateToken);
+attendanceRouter.use(enforceTenantIsolation);
 
-// GET /api/attendance/sessions
-attendanceRouter.get('/sessions', requirePermission('attendance.read'), async (_req: Request, res: Response): Promise<void> => {
-  const result = await dbClient.query(`
-    SELECT 
-      att_s.id,
-      c.code as "courseCode",
-      c.name as "courseName",
-      sec.name as "sectionName",
-      att_s.session_date as "sessionDate",
-      CONCAT(TO_CHAR(att_s.slot_start, 'HH12:MI AM'), ' - ', TO_CHAR(att_s.slot_end, 'HH12:MI AM')) as slot,
-      CONCAT(u.first_name, ' ', u.last_name) as "recordedBy",
-      att_s.is_locked as "isLocked"
-    FROM attendance_sessions att_s
-    JOIN section_courses sc ON att_s.section_course_id = sc.id
-    JOIN courses c ON sc.course_id = c.id
-    JOIN sections sec ON sc.section_id = sec.id
-    JOIN users u ON att_s.recorded_by = u.id
-    ORDER BY att_s.session_date DESC
-  `);
+// GET /api/v1/attendance/sessions
+attendanceRouter.get(
+  '/sessions',
+  requirePermission('attendance.read'),
+  attendanceController.getSessions.bind(attendanceController)
+);
 
-  res.json({
-    success: true,
-    data: result.rows,
-  });
-});
+// GET /api/v1/attendance/records - query by sessionId or return list
+attendanceRouter.get(
+  '/records',
+  requirePermission('attendance.read'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const sessionId = req.query.sessionId as string;
+      if (sessionId) {
+        req.params.sessionId = sessionId;
+        return attendanceController.getSessionRecords(req, res, next);
+      }
 
-// GET /api/attendance/records?sessionId=...
-attendanceRouter.get('/records', requirePermission('attendance.read'), async (req: Request, res: Response): Promise<void> => {
-  const { sessionId } = req.query;
+      const result = await dbClient.query(`
+        SELECT 
+          ar.id,
+          ar.session_id as "sessionId",
+          s.id as "studentId",
+          s.roll_number as "studentRoll",
+          CONCAT(u.first_name, ' ', u.last_name) as "studentName",
+          ar.status,
+          ar.recorded_at as "recordedAt"
+        FROM attendance_records ar
+        JOIN students s ON ar.student_id = s.id
+        JOIN users u ON s.user_id = u.id
+        WHERE u.institution_id = $1
+        ORDER BY s.roll_number ASC
+        LIMIT 100
+      `, [req.user!.institutionId]);
 
-  let sql = `
-    SELECT 
-      ar.id,
-      ar.session_id as "sessionId",
-      s.id as "studentId",
-      s.roll_number as "studentRoll",
-      CONCAT(u.first_name, ' ', u.last_name) as "studentName",
-      ar.status,
-      ar.recorded_at as "recordedAt"
-    FROM attendance_records ar
-    JOIN students s ON ar.student_id = s.id
-    JOIN users u ON s.user_id = u.id
-    WHERE 1=1
-  `;
-
-  const params: any[] = [];
-  if (sessionId) {
-    params.push(sessionId);
-    sql += ` AND ar.session_id = $${params.length}`;
+      res.json({
+        success: true,
+        data: result.rows,
+        requestId: req.id,
+      });
+    } catch (err) {
+      next(err);
+    }
   }
+);
 
-  sql += ' ORDER BY s.roll_number ASC';
+// POST /api/v1/attendance/sessions - Record attendance with ABAC faculty boundary check
+attendanceRouter.post(
+  '/sessions',
+  requirePermission('attendance.record'),
+  attendanceController.recordAttendance.bind(attendanceController)
+);
 
-  const result = await dbClient.query(sql, params);
-  res.json({
-    success: true,
-    data: result.rows,
-  });
-});
+// PUT /api/v1/attendance/records/:id - Modifies record with mandatory reason and cryptographic audit
+attendanceRouter.put(
+  '/records/:id',
+  requireAnyPermission(['attendance.record', 'attendance.approve']),
+  async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const { status, reason } = req.body;
 
-// PUT /api/attendance/records/:id (Requires mandatory reason & audit tracking)
-attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 'attendance.approve']), async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const { status, reason } = req.body;
+    if (!status || !['present', 'absent', 'late', 'excused'].includes(status)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_STATUS', message: "Status must be 'present', 'absent', 'late', or 'excused'" },
+      });
+      return;
+    }
 
-  if (!status || !['present', 'absent', 'late', 'excused'].includes(status)) {
-    res.status(400).json({
-      success: false,
-      error: { message: "Status must be 'present', 'absent', 'late', or 'excused'" },
-    });
-    return;
-  }
+    if (!reason || reason.trim().length < 5) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'REASON_REQUIRED', message: 'A mandatory justification reason (min 5 characters) is required' },
+      });
+      return;
+    }
 
-  if (!reason || reason.trim().length < 5) {
-    res.status(400).json({
-      success: false,
-      error: { message: 'A mandatory justification reason (min 5 characters) is required to modify attendance records' },
-    });
-    return;
-  }
-
-  try {
     const updated = await withTransaction(async (tx) => {
-      // 1. Fetch current record
       const curRes = await tx.query(`
         SELECT 
           ar.id, ar.status, ar.session_id,
@@ -99,8 +97,8 @@ attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 
         FROM attendance_records ar
         JOIN students s ON ar.student_id = s.id
         JOIN users u ON s.user_id = u.id
-        WHERE ar.id = $1
-      `, [id]);
+        WHERE ar.id = $1 AND u.institution_id = $2
+      `, [id, req.user!.institutionId]);
 
       if (curRes.rows.length === 0) {
         return null;
@@ -109,7 +107,6 @@ attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 
       const cur = curRes.rows[0];
       const oldStatus = cur.status;
 
-      // 2. Update record
       const updateRes = await tx.query(`
         UPDATE attendance_records
         SET status = $1, recorded_at = CURRENT_TIMESTAMP
@@ -117,7 +114,6 @@ attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 
         RETURNING *
       `, [status, id]);
 
-      // 3. Cryptographic audit log
       await createAuditLog({
         actorId: req.user!.id,
         actorEmail: req.user!.email,
@@ -125,9 +121,10 @@ attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 
         action: 'ATTENDANCE_CHANGE',
         entity: 'attendance_records',
         entityId: id,
+        institutionId: req.user!.institutionId,
         oldValues: { status: oldStatus },
         newValues: { status },
-        reason: `Attendance status for ${cur.student_name} (${cur.roll_number}) modified: ${reason}`,
+        reason: `Attendance for ${cur.student_name} (${cur.roll_number}) modified: ${reason}`,
         ipAddress: req.ip || '127.0.0.1',
       }, tx);
 
@@ -135,7 +132,7 @@ attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 
     });
 
     if (!updated) {
-      res.status(404).json({ success: false, error: { message: 'Attendance record not found' } });
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Attendance record not found' } });
       return;
     }
 
@@ -143,52 +140,14 @@ attendanceRouter.put('/records/:id', requireAnyPermission(['attendance.record', 
       success: true,
       message: 'Attendance record updated successfully with cryptographic audit logging',
       data: updated,
+      requestId: req.id,
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
   }
-});
+);
 
-// POST /api/attendance/corrections (Workflow request)
-attendanceRouter.post('/corrections', requirePermission('attendance.correct'), async (req: Request, res: Response): Promise<void> => {
-  const { recordId, newStatus, reason } = req.body;
-
-  if (!recordId || !newStatus || !reason) {
-    res.status(400).json({ success: false, error: { message: 'recordId, newStatus and reason are required' } });
-    return;
-  }
-
-  const recRes = await dbClient.query('SELECT status FROM attendance_records WHERE id = $1', [recordId]);
-  if (recRes.rows.length === 0) {
-    res.status(404).json({ success: false, error: { message: 'Attendance record not found' } });
-    return;
-  }
-
-  const previousStatus = recRes.rows[0].status;
-
-  const result = await withTransaction(async (tx) => {
-    // 1. Insert correction
-    const corrRes = await tx.query(`
-      INSERT INTO attendance_corrections (attendance_record_id, requested_by, previous_status, new_status, reason, status)
-      VALUES ($1, $2, $3, $4, $5, 'pending')
-      RETURNING *
-    `, [recordId, req.user!.id, previousStatus, newStatus, reason]);
-
-    // 2. Insert approval request
-    await tx.query(`
-      INSERT INTO approval_requests (institution_id, requester_id, entity, entity_id, request_type, reason, status)
-      VALUES (
-        (SELECT institution_id FROM users WHERE id = $1),
-        $1, 'attendance', $2, 'Attendance Regularization', $3, 'pending'
-      )
-    `, [req.user!.id, recordId, reason]);
-
-    return corrRes.rows[0];
-  });
-
-  res.json({
-    success: true,
-    message: 'Correction request submitted for administrative governance approval',
-    data: result,
-  });
-});
+// POST /api/v1/attendance/corrections
+attendanceRouter.post(
+  '/corrections',
+  requirePermission('attendance.correct'),
+  attendanceController.requestCorrection.bind(attendanceController)
+);
