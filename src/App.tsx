@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, UserRole, GlobalFilterState } from './types';
+import { User, GlobalFilterState } from './types';
 import { db } from './services/db';
 import { api } from './services/api';
 import { Sidebar } from './components/layout/Sidebar';
@@ -52,12 +52,16 @@ export function App() {
     // Bootstrap real JWT session and sync PostgreSQL data
     const initSession = async () => {
       try {
-        if (!api.getToken()) {
-          const authRes = await api.auth.switchRole('COLLEGE_ADMIN');
-          setCurrentUser(authRes.user);
-        } else {
-          const meRes = await api.auth.me();
-          setCurrentUser(meRes.user);
+        if (api.getToken()) {
+          const sessionRes = await api.auth.getSession();
+          if (sessionRes && sessionRes.user) {
+            setCurrentUser({
+              ...sessionRes.user,
+              role: sessionRes.role,
+              permissions: sessionRes.permissions,
+              departmentId: sessionRes.department?.id,
+            });
+          }
         }
         await db.sync();
       } catch (err) {
@@ -69,32 +73,13 @@ export function App() {
     return unsubscribe;
   }, []);
 
-  const handleRoleSwitch = async (newRole: UserRole) => {
+  const handleSignOut = async () => {
     try {
-      const res = await api.auth.switchRole(newRole);
-      setCurrentUser(res.user);
-      await db.sync();
+      await api.auth.logout();
     } catch (err) {
-      console.warn('[handleRoleSwitch] API switch fallback:', err);
-      // Fallback local update
-      let name = { first: 'Adrian', last: 'Vance', email: 'admin.vance@campus.edu' };
-      if (newRole === 'STUDENT') {
-        name = { first: 'Maya', last: 'Chen', email: 'm.chen@campus.edu' };
-      } else if (newRole === 'FACULTY') {
-        name = { first: 'Sarah', last: 'Jenkins', email: 's.jenkins@campus.edu' };
-      } else if (newRole === 'HOD') {
-        name = { first: 'Sarah', last: 'Jenkins', email: 'hod.cse@campus.edu' };
-      } else if (newRole === 'ACCOUNTANT') {
-        name = { first: 'Julian', last: 'Cole', email: 'bursar.cole@campus.edu' };
-      }
-
-      setCurrentUser({
-        ...currentUser,
-        role: newRole,
-        firstName: name.first,
-        lastName: name.last,
-        email: name.email,
-      });
+      console.error('[handleSignOut] Error during logout:', err);
+    } finally {
+      setIsLoginOpen(true);
     }
   };
 
@@ -134,7 +119,7 @@ export function App() {
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         currentUser={currentUser}
-        onSwitchRole={handleRoleSwitch}
+        onSignOut={handleSignOut}
       />
 
       {/* Main Workspace Frame */}

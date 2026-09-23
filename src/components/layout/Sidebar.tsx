@@ -11,35 +11,26 @@ import {
   CreditCard,
   CheckSquare,
   ShieldAlert,
-  ChevronDown,
   Building2,
+  ShieldCheck,
+  LogOut,
 } from 'lucide-react';
-import { User, UserRole } from '../../types';
+import { User } from '../../types';
 import { hasPermission, PERMISSIONS } from '../../services/rbac';
 
 interface SidebarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
   currentUser: User;
-  onSwitchRole: (role: UserRole) => void;
+  onSignOut?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onSelectTab,
   currentUser,
-  onSwitchRole,
+  onSignOut,
 }) => {
-  const allRoles: UserRole[] = [
-    'SUPER_ADMIN',
-    'COLLEGE_ADMIN',
-    'PRINCIPAL',
-    'HOD',
-    'FACULTY',
-    'STUDENT',
-    'ACCOUNTANT',
-    'AUDITOR',
-  ];
 
   const navSections = [
     {
@@ -186,7 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Role Switcher & User Profile Footprint */}
+      {/* Authenticated User Footprint & Session Controls */}
       <div
         style={{
           padding: '14px 16px',
@@ -194,34 +185,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
           backgroundColor: 'var(--color-near-black)',
         }}
       >
-        <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginBottom: '6px' }}>
-          SWITCH ACTIVE ROLE (RBAC):
-        </div>
-        <div style={{ position: 'relative' }}>
-          <select
-            value={currentUser.role}
-            onChange={(e) => onSwitchRole(e.target.value as UserRole)}
-            className="input-base"
-            style={{
-              padding: '6px 10px',
-              fontSize: '12px',
-              fontWeight: 500,
-              backgroundColor: 'var(--color-dark-charcoal)',
-            }}
-          >
-            {allRoles.map((r) => (
-              <option key={r} value={r}>
-                {r.replace('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
           <div
             style={{
-              width: '26px',
-              height: '26px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: '10px',
+              fontWeight: 600,
+              color: 'var(--color-light-gray)',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            <ShieldCheck size={12} color="#81C784" />
+            <span>{currentUser.role.replace('_', ' ')}</span>
+          </div>
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              title="Sign Out of Session"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: 'none',
+                border: 'none',
+                color: 'var(--color-medium-gray)',
+                cursor: 'pointer',
+                fontSize: '11px',
+                padding: '2px 4px',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'color 100ms ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#FF8A80')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-medium-gray)')}
+            >
+              <LogOut size={12} />
+              <span>Exit</span>
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              width: '28px',
+              height: '28px',
               borderRadius: '50%',
               backgroundColor: 'var(--color-dark-gray)',
               border: '1px solid var(--color-border-gray)',
@@ -231,16 +241,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               fontSize: '11px',
               color: 'var(--color-white)',
               fontWeight: 600,
+              flexShrink: 0,
             }}
           >
-            {currentUser.firstName[0]}
-            {currentUser.lastName[0]}
+            {currentUser.firstName?.[0] || 'U'}
+            {currentUser.lastName?.[0] || ''}
           </div>
-          <div style={{ overflow: 'hidden' }}>
+          <div style={{ overflow: 'hidden', flex: 1 }}>
             <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-off-white)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
               {currentUser.firstName} {currentUser.lastName}
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--color-medium-gray)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--color-medium-gray)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
               {currentUser.email}
             </div>
           </div>

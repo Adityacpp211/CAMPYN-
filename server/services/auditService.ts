@@ -71,27 +71,41 @@ export async function createAuditLog(
     ? latestLogRes.rows[0].hash
     : GENESIS_HASH;
 
-  const now = new Date();
-  const timestamp = now.toISOString();
-
-  const hash = computeAuditHash(
-    previousHash,
-    input.actorId,
-    input.action,
-    input.entity,
-    input.entityId,
-    input.oldValues,
-    input.newValues,
-    input.reason,
-    timestamp
-  );
-
-  // If institutionId not provided, look up default
+  // Fallbacks for optional or anonymous security event fields
   let institutionId = input.institutionId;
   if (!institutionId) {
     const instRes = await db.query('SELECT id FROM institutions LIMIT 1');
     institutionId = instRes.rows[0]?.id;
   }
+
+  let actorId = input.actorId;
+  let actorEmail = input.actorEmail || 'system@campus.edu';
+  let role = input.role || 'SYSTEM';
+
+  if (!actorId) {
+    const userRes = await db.query('SELECT id, email FROM users ORDER BY created_at ASC LIMIT 1');
+    if (userRes.rows.length > 0) {
+      actorId = userRes.rows[0].id;
+      if (!input.actorEmail) actorEmail = userRes.rows[0].email;
+    }
+  }
+
+  const entityId = input.entityId || 'system';
+
+  const now = new Date();
+  const timestamp = now.toISOString();
+
+  const hash = computeAuditHash(
+    previousHash,
+    actorId || '00000000-0000-0000-0000-000000000000',
+    input.action,
+    input.entity,
+    entityId,
+    input.oldValues,
+    input.newValues,
+    input.reason,
+    timestamp
+  );
 
   const insertSql = `
     INSERT INTO audit_logs (
@@ -104,12 +118,12 @@ export async function createAuditLog(
 
   const values = [
     institutionId,
-    input.actorId,
-    input.actorEmail,
-    input.role,
+    actorId,
+    actorEmail,
+    role,
     input.action,
     input.entity,
-    input.entityId,
+    entityId,
     input.oldValues ? JSON.stringify(input.oldValues) : null,
     input.newValues ? JSON.stringify(input.newValues) : null,
     input.reason || null,

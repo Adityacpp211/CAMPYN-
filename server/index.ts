@@ -19,6 +19,7 @@ import { examsRouter } from './routes/exams.routes';
 import { dashboardRouter } from './routes/dashboard.routes';
 import { getDb, dbClient } from './db';
 import { runMigrations } from './db/migrate';
+import { structuredLogger } from './middleware/logger';
 
 export const app = express();
 
@@ -29,6 +30,7 @@ app.use(helmet({
 app.use(cors());
 app.use(express.json());
 app.use(requestIdMiddleware);
+app.use(structuredLogger);
 
 // Rate limiting
 app.use('/api', apiLimiter);

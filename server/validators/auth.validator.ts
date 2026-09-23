@@ -19,6 +19,16 @@ export const switchRoleSchema = z.object({
   role: z.string().min(1, 'Role code is required'),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('A valid email address is required'),
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Verification token is required'),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type PasswordResetInput = z.infer<typeof passwordResetSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export type SwitchRoleInput = z.infer<typeof switchRoleSchema>;

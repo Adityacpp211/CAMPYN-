@@ -69,8 +69,8 @@ class ApiClient {
 
   // Authentication
   public auth = {
-    login: async (email: string, password: string): Promise<{ token: string; user: User }> => {
-      const data = await this.request<{ token: string; user: User }>('/auth/login', {
+    login: async (email: string, password: string): Promise<{ token: string; user: User; session: any }> => {
+      const data = await this.request<{ token: string; user: User; session: any }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
@@ -79,6 +79,9 @@ class ApiClient {
     },
     me: async (): Promise<{ user: User }> => {
       return this.request<{ user: User }>('/auth/me');
+    },
+    getSession: async (): Promise<any> => {
+      return this.request<any>('/auth/session');
     },
     switchRole: async (role: UserRole): Promise<{ token: string; user: User }> => {
       const data = await this.request<{ token: string; user: User }>('/auth/switch-role', {
@@ -94,6 +97,31 @@ class ApiClient {
       } finally {
         this.setToken(null);
       }
+    },
+    logoutAll: async (): Promise<{ revokedSessions: number }> => {
+      try {
+        return await this.request<{ revokedSessions: number }>('/auth/logout-all', { method: 'POST' });
+      } finally {
+        this.setToken(null);
+      }
+    },
+    forgotPassword: async (email: string): Promise<{ message: string; resetToken?: string }> => {
+      return this.request('/auth/password/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+    },
+    resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
+      return this.request('/auth/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({ token, newPassword }),
+      });
+    },
+    verifyEmail: async (token: string): Promise<{ message: string }> => {
+      return this.request('/auth/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
     },
   };
 
