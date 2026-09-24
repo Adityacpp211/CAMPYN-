@@ -101,15 +101,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             fontWeight: 700,
-            fontSize: '14px',
+            fontSize: '13px',
             letterSpacing: '-0.03em',
           }}
         >
-          OS
+          CP
         </div>
         <div>
           <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-white)', letterSpacing: '-0.01em' }}>
-            CampusOS
+            CAMPÈS
           </div>
           <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Building2 size={10} /> Apex Institute of Tech
