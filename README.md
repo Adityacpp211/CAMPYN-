@@ -175,17 +175,41 @@ npm run seed
 ```
 
 ### 4. Run the Platform
-Open two terminal windows:
 
+#### Option A: Web Application
+Open two terminal windows:
 ```bash
 # Terminal 1: Launch Backend Engine (Port 3001)
 npm run dev:server
 
-# Terminal 2: Launch Frontend Client (Port 5173)
+# Terminal 2: Launch Web Frontend (Port 5173)
 npm run dev
 ```
 
-Visit [`http://localhost:5173`](http://localhost:5173) to enter the application.
+#### Option B: Windows Native Desktop App (.exe)
+Run the dedicated desktop window process:
+```bash
+npm run dev:desktop
+```
+To generate a standalone Windows installer / portable executable:
+```bash
+npm run build:desktop
+```
+*The packaged Windows executable will be generated in `dist-electron/`.*
+
+#### Option C: Android Mobile Application (APK)
+CAMPÈS is fully configured with Capacitor for native mobile deployment:
+```bash
+# 1. Build and synchronize frontend assets into Android native project
+npm run build:mobile
+
+# 2. Open project directly in Android Studio
+npx cap open android
+
+# 3. Or build the debug APK directly from command line
+npm run build:apk
+```
+*The generated APK will be at `android/app/build/outputs/apk/debug/app-debug.apk` ready to install on any Android phone or tablet.*
 
 ---
 
