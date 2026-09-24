@@ -7,6 +7,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "desktop": "electron electron/main.cjs",
+    "start:desktop": "concurrently -k \"npm run dev:server\" \"electron electron/main.cjs\"",
     "dev": "vite",
     "dev:server": "tsx server/index.ts",
     "dev:desktop": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",

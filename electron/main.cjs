@@ -9,23 +9,25 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 720,
-    title: 'CAMPÈS — Système d\'Information Universitaire',
+    title: "CAMPÈS — Système d'Information Universitaire",
     backgroundColor: '#0a0a0a',
     autoHideMenuBar: true,
-    show: false,
+    show: true,
+    center: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
-  const isDev = process.env.NODE_ENV === 'development';
-  const startUrl = isDev
-    ? 'http://localhost:5173'
-    : `file://${path.join(__dirname, '../dist/index.html')}`;
+  const distIndex = path.resolve(__dirname, '..', 'dist', 'index.html');
+  console.log('[Electron] Loading application from:', distIndex);
 
-  mainWindow.loadURL(startUrl);
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[Electron] Window finished loading dist/index.html successfully');
+  });
+
+  mainWindow.loadFile(distIndex);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();

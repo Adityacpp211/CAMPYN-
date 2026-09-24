@@ -17,7 +17,21 @@ import {
   AuditLog,
 } from '../types';
 
-const API_BASE = '/api/v1';
+const getApiBase = (): string => {
+  if (typeof window !== 'undefined') {
+    if (
+      window.location.protocol === 'file:' ||
+      window.location.origin === 'null' ||
+      !window.location.host ||
+      window.location.hostname === 'localhost' && window.location.port !== '5173'
+    ) {
+      return (import.meta.env.VITE_API_URL as string) || 'http://localhost:3001/api/v1';
+    }
+  }
+  return (import.meta.env.VITE_API_URL as string) || '/api/v1';
+};
+
+const API_BASE = getApiBase();
 
 class ApiClient {
   private token: string | null = null;
