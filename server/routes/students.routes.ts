@@ -31,9 +31,16 @@ studentsRouter.post(
 
 // POST /api/v1/students/:id/transfer-section - Audited section transfer
 studentsRouter.post(
-  '/:id/transfer-section',
+  ['/:id/transfer-section', '/:id/transfer'],
   requireAnyPermission(['students.manage', 'departments.manage']),
   studentController.transferSection.bind(studentController)
+);
+
+// PATCH /api/v1/students/:id - Update student record
+studentsRouter.patch(
+  '/:id',
+  requireAnyPermission(['students.manage', 'departments.manage']),
+  studentController.updateStudent.bind(studentController)
 );
 
 // GET /api/v1/students/:id - Individual student dossier

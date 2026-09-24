@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
-import { User, GlobalFilterState } from './types';
-import { db } from './services/db';
-import { api } from './services/api';
+import { useState } from 'react';
+import { GlobalFilterState } from './types';
+import { useAuth } from './hooks/useAuth';
 import { Sidebar } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
 import { GlobalFilterBar } from './components/layout/GlobalFilterBar';
@@ -18,70 +17,134 @@ import { ExamsView } from './features/exams/ExamsView';
 import { FeesView } from './features/fees/FeesView';
 import { ApprovalsView } from './features/approvals/ApprovalsView';
 import { AuditView } from './features/audit/AuditView';
+import { Loader2, ShieldCheck, LogIn } from 'lucide-react';
 
 export function App() {
-  const [currentUser, setCurrentUser] = useState<User>({
-    id: 'u-admin-1',
-    email: 'admin.vance@campus.edu',
-    username: 'avance',
-    firstName: 'Adrian',
-    lastName: 'Vance',
-    role: 'COLLEGE_ADMIN',
-    departmentId: 'dept-cse',
-  });
+  const { currentUser, loading: authLoading, sessionExpired, logout, refetchSession } = useAuth();
 
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [isCommandOpen, setIsCommandOpen] = useState<boolean>(false);
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
   const [selectedStudentDossierId, setSelectedStudentDossierId] = useState<string | undefined>(undefined);
-  const [, setTick] = useState<number>(0);
 
   const [globalFilter, setGlobalFilter] = useState<GlobalFilterState>({
     academicYear: '2026-2027',
     semester: 5,
-    departmentId: 'dept-cse',
+    departmentId: '',
     section: 'Section A',
   });
 
-  // Subscribe to real-time database state mutations
-  useEffect(() => {
-    const unsubscribe = db.subscribe(() => {
-      setTick((prev) => prev + 1);
-    });
-
-    // Bootstrap real JWT session and sync PostgreSQL data
-    const initSession = async () => {
-      try {
-        if (api.getToken()) {
-          const sessionRes = await api.auth.getSession();
-          if (sessionRes && sessionRes.user) {
-            setCurrentUser({
-              ...sessionRes.user,
-              role: sessionRes.role,
-              permissions: sessionRes.permissions,
-              departmentId: sessionRes.department?.id,
-            });
-          }
-        }
-        await db.sync();
-      } catch (err) {
-        console.warn('[App] Session bootstrap note (running in local mode):', err);
-      }
-    };
-
-    initSession();
-    return unsubscribe;
-  }, []);
-
   const handleSignOut = async () => {
-    try {
-      await api.auth.logout();
-    } catch (err) {
-      console.error('[handleSignOut] Error during logout:', err);
-    } finally {
-      setIsLoginOpen(true);
-    }
+    await logout();
+    setIsLoginOpen(true);
   };
+
+  if (authLoading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--color-near-black)',
+          color: 'var(--color-white)',
+          gap: '16px',
+        }}
+      >
+        <div
+          style={{
+            width: '42px',
+            height: '42px',
+            backgroundColor: 'var(--color-white)',
+            color: 'var(--color-black)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 800,
+            fontSize: '18px',
+          }}
+        >
+          OS
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-light-gray)', fontSize: '13px' }}>
+          <Loader2 size={16} className="animate-spin" />
+          <span>Verifying cryptographic session credentials...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--color-near-black)',
+          padding: '20px',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '420px',
+            backgroundColor: 'var(--color-dark-charcoal)',
+            border: '1px solid var(--color-border-gray)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '32px',
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              backgroundColor: 'var(--color-charcoal)',
+              border: '1px solid var(--color-border-gray)',
+              borderRadius: 'var(--radius-md)',
+              margin: '0 auto 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <ShieldCheck size={24} color="#81C784" />
+          </div>
+          <h1 style={{ fontSize: '20px', fontWeight: 600, color: 'var(--color-white)', marginBottom: '8px' }}>
+            CAMPYN Enterprise Access
+          </h1>
+          <p style={{ fontSize: '13px', color: 'var(--color-light-gray)', marginBottom: '24px' }}>
+            {sessionExpired
+              ? 'Your authenticated session has expired. Re-authenticate to access the institution.'
+              : 'Institutional login required. Establish an authenticated session to proceed.'}
+          </p>
+          <button
+            className="btn btn-primary"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => setIsLoginOpen(true)}
+          >
+            <LogIn size={16} /> Sign In with Institutional Identity
+          </button>
+        </div>
+
+        <LoginModal
+          isOpen={isLoginOpen || !currentUser}
+          onClose={() => setIsLoginOpen(false)}
+          onLoginSuccess={() => {
+            setIsLoginOpen(false);
+            refetchSession();
+          }}
+          isExpired={sessionExpired}
+        />
+      </div>
+    );
+  }
 
   const renderActiveView = () => {
     switch (currentTab) {
@@ -157,10 +220,11 @@ export function App() {
       <LoginModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
-        onLoginSuccess={(user) => {
-          setCurrentUser(user);
-          db.sync();
+        onLoginSuccess={() => {
+          setIsLoginOpen(false);
+          refetchSession();
         }}
+        isExpired={sessionExpired}
       />
     </div>
   );

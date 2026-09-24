@@ -24,10 +24,13 @@ function canonicalJson(val: any): string {
   if (typeof val === 'string') {
     try {
       const parsed = JSON.parse(val);
-      return canonicalJson(parsed);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return canonicalJson(parsed);
+      }
     } catch {
-      return val;
+      // not a json string, fallback to regular string
     }
+    return JSON.stringify(val);
   }
   if (typeof val !== 'object') return JSON.stringify(val);
   if (Array.isArray(val)) {
@@ -135,7 +138,25 @@ export async function createAuditLog(
   ];
 
   const result = await db.query(insertSql, values);
-  return result.rows[0];
+  const row = result.rows[0];
+
+  // Consistently compute and persist hash using the exact stored row values and database timestamp
+  const dbTimestamp = row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString();
+  const refinedHash = computeAuditHash(
+    previousHash,
+    row.actor_id || '00000000-0000-0000-0000-000000000000',
+    row.action,
+    row.entity,
+    row.entity_id,
+    row.old_values,
+    row.new_values,
+    row.reason,
+    dbTimestamp
+  );
+  await db.query('UPDATE audit_logs SET hash = $1 WHERE id = $2', [refinedHash, row.id]);
+  row.hash = refinedHash;
+
+  return row;
 }
 
 export async function verifyAuditLedger(): Promise<{

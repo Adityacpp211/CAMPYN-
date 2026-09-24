@@ -2,13 +2,25 @@ import bcrypt from 'bcryptjs';
 import { dbClient, getDb, withTransaction } from './index';
 import { runMigrations } from './migrate';
 import { createAuditLog } from '../services/auditService';
+import { config } from '../config';
 
 export async function seedDatabase(): Promise<void> {
   console.log('[Seed] Initializing database schema...');
   await runMigrations();
 
+  if (config.isProduction) {
+    const customPassword = process.env.INITIAL_ADMIN_PASSWORD;
+    if (!customPassword || customPassword === 'Password@123') {
+      throw new Error(
+        '[FATAL SEED] Production seed cannot use predictable development password. Set INITIAL_ADMIN_PASSWORD with a secure string before running seed in production.'
+      );
+    }
+  }
+
   console.log('[Seed] Seeding relational records...');
-  const passwordHash = await bcrypt.hash('Password@123', 10);
+  // [DEVELOPMENT ONLY] 'Password@123' is strictly restricted to development environments.
+  const rawPassword = config.isProduction ? process.env.INITIAL_ADMIN_PASSWORD! : 'Password@123';
+  const passwordHash = await bcrypt.hash(rawPassword, 10);
 
   await withTransaction(async (tx) => {
     // 1. Clean existing records if any

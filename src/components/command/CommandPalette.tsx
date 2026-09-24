@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, UserCheck, Calendar, BookOpen, DollarSign, CheckSquare, ShieldAlert, ArrowRight, User } from 'lucide-react';
-import { db } from '../../services/db';
+import { api } from '../../services/api';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [matchedStudents, setMatchedStudents] = useState<any[]>([]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -33,9 +34,38 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // Live student search from PostgreSQL API
+  useEffect(() => {
+    if (!isOpen || query.trim().length < 2) {
+      setMatchedStudents([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.students.list({ search: query.trim(), limit: 5 });
+        const list = Array.isArray(res) ? res : res.data || [];
+        setMatchedStudents(
+          list.map((s: any) => ({
+            id: `student-${s.id}`,
+            label: `${s.firstName || ''} ${s.lastName || ''} (${s.rollNumber || ''})`,
+            detail: `Roll: ${s.rollNumber} • ${s.programName || 'Student'}`,
+            studentId: s.id,
+            category: 'Students',
+            icon: User,
+          }))
+        );
+      } catch (err) {
+        console.warn('[CommandPalette] Student search:', err);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [query, isOpen]);
+
   if (!isOpen) return null;
 
-  // Filter commands & entities
+  // Navigation commands
   const navCommands = [
     { id: 'nav-students', label: 'Go to Students Directory', tab: 'students', icon: User, category: 'Navigation' },
     { id: 'nav-attendance', label: 'Open Attendance System', tab: 'attendance', icon: UserCheck, category: 'Navigation' },
@@ -46,23 +76,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     { id: 'nav-approvals', label: 'Pending Workflow Approvals', tab: 'approvals', icon: CheckSquare, category: 'Navigation' },
     { id: 'nav-audit', label: 'Inspect Immutable Audit Logs', tab: 'audit', icon: ShieldAlert, category: 'Navigation' },
   ];
-
-  // Match students
-  const matchedStudents = db.students
-    .filter(
-      (s) =>
-        s.firstName.toLowerCase().includes(query.toLowerCase()) ||
-        s.lastName.toLowerCase().includes(query.toLowerCase()) ||
-        s.rollNumber.toLowerCase().includes(query.toLowerCase())
-    )
-    .map((s) => ({
-      id: `student-${s.id}`,
-      label: `${s.firstName} ${s.lastName} (${s.rollNumber})`,
-      detail: `CGPA: ${s.cgpa} • Attendance: ${s.attendancePercentage}%`,
-      studentId: s.id,
-      category: 'Students',
-      icon: User,
-    }));
 
   const filteredCommands = navCommands.filter((c) =>
     c.label.toLowerCase().includes(query.toLowerCase())

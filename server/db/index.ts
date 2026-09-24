@@ -32,13 +32,16 @@ export async function getDb(): Promise<DbClient> {
     });
     console.log('[Database] Connected to external PostgreSQL via Pool');
   } else {
+    if (config.isProduction) {
+      throw new Error('[FATAL DATABASE] Production mode requires external PostgreSQL via DATABASE_URL. Embedded PGlite is disabled in production.');
+    }
     const dataDir = path.resolve(process.cwd(), 'data', 'campus_pg');
     if (!fs.existsSync(path.dirname(dataDir))) {
       fs.mkdirSync(path.dirname(dataDir), { recursive: true });
     }
     pgliteInstance = new PGlite(dataDir);
     await pgliteInstance.waitReady;
-    console.log(`[Database] Initialized embedded PostgreSQL engine at ${dataDir}`);
+    console.log(`[Database] Initialized embedded PostgreSQL engine at ${dataDir} (DEVELOPMENT/LOCAL MODE ONLY)`);
   }
 
   isInitialized = true;

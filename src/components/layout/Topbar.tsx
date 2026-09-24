@@ -83,7 +83,7 @@ export const Topbar: React.FC<TopbarProps> = ({ currentUser, onOpenCommand, onOp
             onClick={onOpenLogin}
             style={{ fontSize: '11px', padding: '3px 8px' }}
           >
-            Sign In / Switch
+            Authenticate
           </button>
         )}
 

@@ -56,8 +56,20 @@ auditRouter.get('/', requirePermission('audit.read'), async (req: Request, res: 
   });
 });
 
-// GET /api/audit/verify (Cryptographic tamper-evident chain verification)
+// GET /api/audit/verify and /verify-chain (Cryptographic tamper-evident chain verification)
 auditRouter.get('/verify', requirePermission('audit.read'), async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await verifyAuditLedger();
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+auditRouter.get('/verify-chain', requirePermission('audit.read'), async (_req: Request, res: Response): Promise<void> => {
   try {
     const result = await verifyAuditLedger();
     res.json({

@@ -4,6 +4,7 @@ import {
   studentQuerySchema,
   createStudentSchema,
   sectionTransferSchema,
+  updateStudentSchema,
 } from '../validators/student.validator';
 
 export class StudentController {
@@ -70,6 +71,21 @@ export class StudentController {
       res.json({
         success: true,
         message: 'Student section transferred and course enrollments updated',
+        data,
+        requestId: req.id,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async updateStudent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const validated = updateStudentSchema.parse(req.body);
+      const data = await studentService.updateStudent(req.user!, req.params.id, validated);
+      res.json({
+        success: true,
+        message: 'Student profile updated successfully',
         data,
         requestId: req.id,
       });

@@ -25,6 +25,10 @@ export function errorHandler(
   const message = err.message || 'Internal Server Error';
   const code = err.code || 'INTERNAL_ERROR';
 
+  if (statusCode >= 500) {
+    console.error('[Unhandled Server Error]', err);
+  }
+
   res.status(statusCode).json({
     success: false,
     error: {

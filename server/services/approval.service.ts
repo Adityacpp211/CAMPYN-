@@ -8,6 +8,17 @@ export class ApprovalService {
     return await approvalRepository.findAll(actor.institutionId, options);
   }
 
+  async getApprovalById(actor: AuthUser, id: string) {
+    const item = await approvalRepository.findById(actor.institutionId, id);
+    if (!item) {
+      const err: any = new Error('Approval request not found');
+      err.statusCode = 404;
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+    return item;
+  }
+
   async createApproval(actor: AuthUser, input: CreateApprovalInput, clientIp = '127.0.0.1') {
     const approval = await approvalRepository.create(actor.id, actor.institutionId, input);
 

@@ -1,39 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../../services/api';
+import React, { useState } from 'react';
 import { User, ApprovalRequest } from '../../types';
+import { useApprovals } from '../../hooks/useApprovals';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 interface ApprovalsViewProps {
   currentUser: User;
 }
 
 export const ApprovalsView: React.FC<ApprovalsViewProps> = ({ currentUser: _currentUser }) => {
-  const [requests, setRequests] = useState<ApprovalRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { requests, pendingCount, loading, error, resolveApproval, refetch } = useApprovals();
   const [activeRequest, setActiveRequest] = useState<ApprovalRequest | null>(null);
   const [decision, setDecision] = useState<'approved' | 'rejected'>('approved');
   const [decisionReason, setDecisionReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const fetchApprovals = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.approvals.list();
-      setRequests(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load approvals');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchApprovals();
-  }, [fetchApprovals]);
 
   const handleOpenDecision = (req: ApprovalRequest, type: 'approved' | 'rejected') => {
     setActiveRequest(req);
@@ -49,8 +30,7 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({ currentUser: _curr
 
     try {
       setIsSubmitting(true);
-      await api.approvals.resolve(activeRequest.id, decision, decisionReason);
-      await fetchApprovals();
+      await resolveApproval(activeRequest.id, decision, decisionReason);
       setActiveRequest(null);
     } catch (err: any) {
       alert(err.message || 'Failed to resolve approval request');
@@ -58,8 +38,6 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({ currentUser: _curr
       setIsSubmitting(false);
     }
   };
-
-  const pendingCount = requests.filter((r) => r.status === 'pending').length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -79,8 +57,11 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({ currentUser: _curr
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '13px' }}>
-          {error}
+        <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{error}</span>
+          <button className="btn btn-sm btn-secondary" onClick={() => refetch()}>
+            <RefreshCw size={12} /> Retry
+          </button>
         </div>
       )}
 

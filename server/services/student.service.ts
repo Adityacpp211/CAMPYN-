@@ -69,6 +69,30 @@ export class StudentService {
 
     return result;
   }
+
+  async updateStudent(actor: AuthUser, studentId: string, input: any) {
+    const updated = await studentRepository.updateStudent(studentId, actor.institutionId, input);
+    if (!updated) {
+      const error: any = new Error('Student not found');
+      error.statusCode = 404;
+      error.code = 'RESOURCE_NOT_FOUND';
+      throw error;
+    }
+
+    await createAuditLog({
+      institutionId: actor.institutionId,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      role: actor.role,
+      action: 'STUDENT_UPDATED',
+      entity: 'students',
+      entityId: studentId,
+      newValues: updated,
+      reason: `Student profile ${studentId} updated by ${actor.email}`,
+    });
+
+    return updated;
+  }
 }
 
 export const studentService = new StudentService();

@@ -21,7 +21,6 @@ export class AcademicRepository {
         d.description,
         d.status,
         d.created_at as "createdAt",
-        d.updated_at as "updatedAt",
         COALESCE(
           (
             SELECT CONCAT(u.first_name, ' ', u.last_name)
@@ -77,7 +76,6 @@ export class AcademicRepository {
         d.hod_id as "hodId",
         d.status,
         d.created_at as "createdAt",
-        d.updated_at as "updatedAt",
         COALESCE(
           (
             SELECT CONCAT(u.first_name, ' ', u.last_name)

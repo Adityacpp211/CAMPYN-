@@ -21,9 +21,28 @@ const API_BASE = '/api/v1';
 
 class ApiClient {
   private token: string | null = null;
+  private unauthorizedListeners: Array<() => void> = [];
 
   constructor() {
     this.token = localStorage.getItem('campus_os_token');
+  }
+
+  public onUnauthorized(listener: () => void): () => void {
+    this.unauthorizedListeners.push(listener);
+    return () => {
+      this.unauthorizedListeners = this.unauthorizedListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private notifyUnauthorized(): void {
+    this.setToken(null);
+    this.unauthorizedListeners.forEach((l) => {
+      try {
+        l();
+      } catch (err) {
+        console.error('Error in onUnauthorized listener:', err);
+      }
+    });
   }
 
   public setToken(token: string | null) {
@@ -57,6 +76,9 @@ class ApiClient {
     const json = await res.json().catch(() => ({}));
 
     if (!res.ok) {
+      if (res.status === 401) {
+        this.notifyUnauthorized();
+      }
       const errorMsg = json.error?.message || json.message || `Request failed with status ${res.status}`;
       const err: any = new Error(errorMsg);
       err.code = json.error?.code;
@@ -145,6 +167,12 @@ class ApiClient {
     },
     create: async (data: any): Promise<any> => {
       return this.request('/students', { method: 'POST', body: JSON.stringify(data) });
+    },
+    update: async (id: string, data: any): Promise<any> => {
+      return this.request(`/students/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+    },
+    profile: async (): Promise<any> => {
+      return this.request('/students/profile');
     },
     transferSection: async (studentId: string, toSectionId: string, reason: string): Promise<any> => {
       return this.request(`/students/${studentId}/transfer-section`, {
@@ -310,6 +338,9 @@ class ApiClient {
     list: async (): Promise<ApprovalRequest[]> => {
       return this.request<ApprovalRequest[]>('/approvals');
     },
+    get: async (id: string): Promise<ApprovalRequest> => {
+      return this.request<ApprovalRequest>(`/approvals/${id}`);
+    },
     resolve: async (id: string, decision: 'approved' | 'rejected', decisionReason: string): Promise<any> => {
       return this.request(`/approvals/${id}/resolve`, {
         method: 'POST',
@@ -346,6 +377,9 @@ class ApiClient {
     createSlot: async (data: any): Promise<any> => {
       return this.request('/timetable', { method: 'POST', body: JSON.stringify(data) });
     },
+    updateSlot: async (id: string, data: any): Promise<any> => {
+      return this.request(`/timetable/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    },
     deleteSlot: async (id: string): Promise<any> => {
       return this.request(`/timetable/${id}`, { method: 'DELETE' });
     },
@@ -368,6 +402,9 @@ class ApiClient {
     },
     marks: async (examId: string): Promise<MarksEntry[]> => {
       return this.request<MarksEntry[]>(`/exams/${examId}/marks`);
+    },
+    toggleLock: async (id: string): Promise<any> => {
+      return this.request(`/exams/${id}/lock`, { method: 'POST' });
     },
     updateMarks: async (id: string, marksObtained: number, grade: string, reason: string): Promise<any> => {
       return this.request(`/exams/marks/${id}`, {

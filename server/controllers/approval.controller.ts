@@ -17,6 +17,19 @@ export class ApprovalController {
     }
   }
 
+  async getApprovalById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const approval = await approvalService.getApprovalById(req.user!, req.params.id);
+      res.json({
+        success: true,
+        data: approval,
+        requestId: req.id,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   async createApproval(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const validatedInput = createApprovalSchema.parse(req.body);

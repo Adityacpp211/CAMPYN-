@@ -1,58 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../../services/api';
+import React, { useState } from 'react';
 import { AuditLog } from '../../types';
+import { useAuditLogs } from '../../hooks/useAuditLogs';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
-import { ShieldCheck, Search, Eye, ShieldAlert, CheckCircle2, Loader2 } from 'lucide-react';
+import { ShieldCheck, Search, Eye, ShieldAlert, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 
 export const AuditView: React.FC = () => {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { logs, loading, error, verifyState, verifyIntegrity, refetch } = useAuditLogs();
   const [search, setSearch] = useState('');
   const [inspectLog, setInspectLog] = useState<AuditLog | null>(null);
-  const [verifyState, setVerifyState] = useState<{
-    loading: boolean;
-    verified: boolean;
-    isValid?: boolean;
-    totalRecords?: number;
-    error?: string;
-  }>({ loading: false, verified: false });
-
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.audit.list();
-      setLogs(data);
-    } catch (err: any) {
-      console.error('Failed to load audit trail:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
 
   const handleVerifyIntegrity = async () => {
-    setVerifyState({ loading: true, verified: false });
-    try {
-      const res = await api.audit.verify();
-      setVerifyState({
-        loading: false,
-        verified: true,
-        isValid: res.isValid,
-        totalRecords: res.totalRecords,
-        error: res.error,
-      });
-    } catch (err: any) {
-      setVerifyState({
-        loading: false,
-        verified: true,
-        isValid: false,
-        error: err.message,
-      });
-    }
+    await verifyIntegrity();
   };
 
   const filteredLogs = logs.filter(
@@ -99,6 +58,15 @@ export const AuditView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {error && (
+        <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{error}</span>
+          <button className="btn btn-sm btn-secondary" onClick={() => refetch()}>
+            <RefreshCw size={12} /> Retry
+          </button>
+        </div>
+      )}
 
       {/* Verification Banner */}
       {verifyState.verified && (

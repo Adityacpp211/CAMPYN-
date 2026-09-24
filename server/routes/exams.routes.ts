@@ -113,3 +113,46 @@ examsRouter.put('/marks/:id', requirePermission('marks.enter'), async (req: Requ
     res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
+
+// POST /api/exams/:id/toggle-lock (Toggle examination lock and publication status)
+examsRouter.post(['/:id/lock', '/:id/toggle-lock'], requirePermission('marks.lock_publish'), async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    const outcome = await withTransaction(async (tx) => {
+      const examRes = await tx.query(`SELECT * FROM examinations WHERE id = $1`, [id]);
+      if (examRes.rows.length === 0) {
+        throw new Error('Examination record not found');
+      }
+
+      const exam = examRes.rows[0];
+      const newLocked = !exam.is_locked;
+      const newPublished = newLocked;
+
+      await tx.query(`
+        UPDATE examinations
+        SET is_locked = $1, is_published = $2
+        WHERE id = $3
+      `, [newLocked, newPublished, id]);
+
+      await createAuditLog({
+        actorId: req.user!.id,
+        actorEmail: req.user!.email,
+        role: req.user!.role,
+        action: newLocked ? 'APPROVE' : 'UPDATE',
+        entity: 'examinations',
+        entityId: id,
+        oldValues: { isLocked: exam.is_locked, isPublished: exam.is_published },
+        newValues: { isLocked: newLocked, isPublished: newPublished },
+        reason: `Examination results ${newLocked ? 'LOCKED & PUBLISHED' : 'UNLOCKED'} by ${req.user!.email}`,
+        ipAddress: req.ip || '127.0.0.1',
+      }, tx);
+
+      return { id, isLocked: newLocked, isPublished: newPublished };
+    });
+
+    res.json({ success: true, message: 'Examination lock status updated', data: outcome });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});

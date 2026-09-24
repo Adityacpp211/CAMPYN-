@@ -156,3 +156,14 @@ export function hasPermission(role: UserRole, permission: PermissionCode): boole
   const allowed = ROLE_PERMISSIONS_MAP[role] || [];
   return allowed.includes(permission);
 }
+
+export function can(
+  user: { role?: UserRole; permissions?: string[] } | null | undefined,
+  permission: PermissionCode | string
+): boolean {
+  if (!user) return false;
+  if (user.role === 'SUPER_ADMIN') return true;
+  if (Array.isArray(user.permissions) && user.permissions.includes(permission)) return true;
+  if (user.role) return hasPermission(user.role, permission as PermissionCode);
+  return false;
+}

@@ -23,6 +23,7 @@ export interface User {
   role: UserRole;
   departmentId?: string;
   phone?: string;
+  permissions?: string[];
 }
 
 export interface Department {
@@ -124,6 +125,8 @@ export interface TimetableSlot {
   day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
   dayOfWeek?: string;
   timeSlot: string;
+  start_time?: string;
+  end_time?: string;
   courseCode: string;
   courseName: string;
   facultyName: string;

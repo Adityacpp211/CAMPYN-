@@ -29,6 +29,8 @@ export function useStudents(options: UseStudentsOptions = {}) {
         search: options.search,
         departmentId: options.departmentId,
         section: options.section,
+        page: options.page,
+        limit: options.limit,
       });
 
       if (Array.isArray(response)) {
@@ -50,17 +52,73 @@ export function useStudents(options: UseStudentsOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [options.search, options.departmentId, options.section]);
+  }, [options.search, options.departmentId, options.section, options.page, options.limit]);
 
   useEffect(() => {
     fetchStudents();
   }, [fetchStudents]);
+
+  const createStudent = async (data: any) => {
+    const res = await api.students.create(data);
+    await fetchStudents();
+    return res;
+  };
+
+  const updateStudent = async (id: string, data: any) => {
+    const res = await api.students.update(id, data);
+    await fetchStudents();
+    return res;
+  };
+
+  const transferSection = async (studentId: string, toSectionId: string, reason: string) => {
+    const res = await api.students.transferSection(studentId, toSectionId, reason);
+    await fetchStudents();
+    return res;
+  };
 
   return {
     students,
     pagination,
     loading,
     error,
+    createStudent,
+    updateStudent,
+    transferSection,
     refetch: fetchStudents,
+  };
+}
+
+export function useStudent(id?: string) {
+  const [student, setStudent] = useState<Student | null>(null);
+  const [loading, setLoading] = useState<boolean>(!!id);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchStudent = useCallback(async () => {
+    if (!id) {
+      setStudent(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.students.get(id);
+      setStudent(res?.data || res);
+    } catch (err: any) {
+      setError(err.message || `Failed to load student ${id}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchStudent();
+  }, [fetchStudent]);
+
+  return {
+    student,
+    loading,
+    error,
+    refetch: fetchStudent,
   };
 }

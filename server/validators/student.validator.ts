@@ -41,6 +41,16 @@ export const createStudentSchema = z.object({
 }));
 
 
+export const updateStudentSchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  phone: z.string().optional(),
+  bloodGroup: z.string().optional(),
+  guardianName: z.string().optional(),
+  guardianPhone: z.string().optional(),
+  academicStatus: z.enum(['active', 'graduated', 'suspended', 'withdrawn']).optional(),
+});
+
 export const sectionTransferSchema = z.object({
   toSectionId: z.string().uuid('Target Section ID must be a valid UUID'),
   reason: z.string().min(5, 'A clear justification reason (min 5 characters) is required for section transfer'),

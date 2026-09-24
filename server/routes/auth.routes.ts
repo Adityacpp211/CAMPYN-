@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authController } from '../controllers/auth.controller';
 import { authenticateToken } from '../middleware/auth';
 
+import { config } from '../config';
+
 export const authRouter = Router();
 
 // Public Authentication Endpoints
@@ -16,5 +18,14 @@ authRouter.get('/me', authenticateToken, (req, res, next) => authController.getS
 authRouter.post('/logout', authenticateToken, (req, res, next) => authController.logout(req, res, next));
 authRouter.post('/logout-all', authenticateToken, (req, res, next) => authController.logoutAll(req, res, next));
 
-// Local Development Role Switcher (Preserved for backwards compatibility in non-prod)
-authRouter.post('/switch-role', (req, res, next) => authController.switchRole(req, res, next));
+// Development-only role switch endpoint (forbidden in production)
+authRouter.post('/switch-role', (req, res, next) => {
+  if (config.isProduction || process.env.NODE_ENV === 'production') {
+    res.status(403).json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Role switching is permanently disabled in production environments.' },
+    });
+    return;
+  }
+  authController.switchRole(req, res, next);
+});

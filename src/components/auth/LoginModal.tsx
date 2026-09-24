@@ -2,15 +2,21 @@ import React, { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { api } from '../../services/api';
 import { User } from '../../types';
-import { Lock, Mail, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLoginSuccess: (user: User) => void;
+  isExpired?: boolean;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({
+  isOpen,
+  onClose,
+  onLoginSuccess,
+  isExpired,
+}) => {
   const [email, setEmail] = useState('admin.vance@campus.edu');
   const [password, setPassword] = useState('Password@123');
   const [loading, setLoading] = useState(false);
@@ -23,10 +29,24 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
 
     try {
       const res = await api.auth.login(email, password);
-      onLoginSuccess(res.user);
+      const user: User = {
+        ...res.user,
+        role: res.session?.role || res.user.role,
+        permissions: res.session?.permissions || res.user.permissions,
+        departmentId: res.session?.departmentId || res.user.departmentId,
+      };
+      onLoginSuccess(user);
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      if (err.status === 429) {
+        setError('Rate limit exceeded. Too many login attempts. Please wait 15 minutes before retrying.');
+      } else if (err.status === 401) {
+        setError('Invalid credentials. Check your institutional username/email and password.');
+      } else if (err.message && err.message.includes('fetch')) {
+        setError('Network failure: Unable to connect to backend server. Verify server is running on port 3001.');
+      } else {
+        setError(err.message || 'Authentication failed. Please verify your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -40,6 +60,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Enterprise Identity Authentication">
       <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {isExpired && (
+          <div
+            style={{
+              padding: '10px 12px',
+              backgroundColor: 'rgba(234, 179, 8, 0.1)',
+              border: '1px solid #EAB308',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#FDE047',
+              fontSize: '12px',
+            }}
+          >
+            <AlertTriangle size={14} />
+            <span>Your session has expired. Please re-authenticate to continue.</span>
+          </div>
+        )}
+
         <p style={{ fontSize: '12px', color: 'var(--color-light-gray)' }}>
           Sign in with your institutional credentials to establish an authenticated cryptographic JWT session.
         </p>
@@ -100,7 +139,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-          <span style={{ fontSize: '10px', color: 'var(--color-medium-gray)' }}>PRE-SEEDED ACCOUNTS (Password: Password@123):</span>
+          <span style={{ fontSize: '10px', color: 'var(--color-medium-gray)' }}>
+            DEVELOPMENT DEMO ACCOUNTS (Password: Password@123):
+          </span>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             <button
               type="button"

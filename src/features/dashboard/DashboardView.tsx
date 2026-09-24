@@ -1,17 +1,19 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Student } from '../../types';
-import { db } from '../../services/db';
+import { useDashboard } from '../../hooks/useDashboard';
+import { useAcademics } from '../../hooks/useAcademics';
+import { useTimetable } from '../../hooks/useTimetable';
+import { useAssignments } from '../../hooks/useAssignments';
+import { api } from '../../services/api';
 import {
-  Calendar,
   AlertTriangle,
-  FileText,
   DollarSign,
   GraduationCap,
   Users,
   CheckCircle2,
-  TrendingUp,
-  Clock,
   ArrowRight,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 
@@ -21,22 +23,89 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNavigate }) => {
-  // Check if role is Student
-  if (currentUser.role === 'STUDENT') {
-    const student = db.students[0]; // Maya Chen
+  const { data, loading: dashLoading, error: dashError, refetch: refetchDash } = useDashboard();
+  const { departments, loading: deptsLoading } = useAcademics();
+  const { slots: timetableSlots } = useTimetable();
+  const { assignments } = useAssignments();
+
+  const [studentProfile, setStudentProfile] = useState<Student | null>(null);
+  const [profileLoading, setProfileLoading] = useState<boolean>(currentUser.role === 'STUDENT');
+
+  useEffect(() => {
+    if (currentUser.role === 'STUDENT') {
+      setProfileLoading(true);
+      api.students
+        .profile()
+        .then((res) => {
+          const profile = res?.data || res;
+          setStudentProfile(profile);
+        })
+        .catch((err) => {
+          console.warn('[Dashboard] Student profile load:', err.message);
+        })
+        .finally(() => {
+          setProfileLoading(false);
+        });
+    }
+  }, [currentUser.role]);
+
+  if (dashLoading || profileLoading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px', color: 'var(--color-light-gray)', gap: '12px' }}>
+        <Loader2 size={24} className="animate-spin" />
+        <span style={{ fontSize: '13px' }}>Aggregating real-time database metrics...</span>
+      </div>
+    );
+  }
+
+  if (dashError) {
+    return (
+      <div style={{ padding: '20px', backgroundColor: 'var(--color-dark-charcoal)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-md)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#FFA4A4', marginBottom: '8px' }}>
+          <AlertTriangle size={18} />
+          <span style={{ fontSize: '14px', fontWeight: 600 }}>Failed to load institutional dashboard</span>
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--color-light-gray)', marginBottom: '14px' }}>
+          {dashError}
+        </p>
+        <button className="btn btn-secondary btn-sm" onClick={() => refetchDash()}>
+          <RefreshCw size={13} /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  const metrics = data?.metrics || {
+    totalStudents: 0,
+    totalFaculty: 0,
+    totalCourses: 0,
+    pendingApprovals: 0,
+    feesCollected: 0,
+    feesOutstanding: 0,
+    attendanceRate: 0,
+  };
+
+  const recentAudits = data?.recentAudits || [];
+  const lowAttendanceAlerts = data?.lowAttendanceAlerts || [];
+
+  // 1. Student Dashboard View
+  if (currentUser.role === 'STUDENT' && studentProfile) {
+    const student = studentProfile;
+    const attPct = typeof student.attendancePercentage === 'number' ? student.attendancePercentage : 0;
+    const pendingFees = typeof student.pendingFees === 'number' ? student.pendingFees : 0;
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: 600, color: 'var(--color-white)' }}>
-            Good morning, {currentUser.firstName}
+            Welcome back, {currentUser.firstName}
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--color-light-gray)', marginTop: '2px' }}>
-            Roll No: {student.rollNumber} • Semester 5 ({student.programName})
+            Roll No: {student.rollNumber} • {student.programName || 'Degree Candidate'} • Semester {student.semesterNumber || 1}
           </p>
         </div>
 
-        {/* Shortage or fee banner if any */}
-        {student.pendingFees > 0 && (
+        {pendingFees > 0 && (
           <div
             style={{
               padding: '12px 16px',
@@ -52,10 +121,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
               <AlertTriangle size={18} color="var(--color-warning)" />
               <div>
                 <span style={{ fontSize: '13px', fontWeight: 500, color: '#FFB74D' }}>
-                  Fee Payment Outstanding: ${student.pendingFees}
+                  Fee Payment Outstanding: ${Number(pendingFees).toLocaleString()}
                 </span>
                 <p style={{ fontSize: '12px', color: 'var(--color-light-gray)' }}>
-                  Semester 5 tuition installment deadline approaches.
+                  Semester tuition dues pending settlement.
                 </p>
               </div>
             </div>
@@ -65,20 +134,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
           </div>
         )}
 
-        {/* Metrics Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
           <div className="surface-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <span className="text-secondary" style={{ fontSize: '12px' }}>ATTENDANCE RATE</span>
-              <Badge variant={student.attendancePercentage >= 75 ? 'success' : 'danger'}>
-                {student.attendancePercentage >= 75 ? 'Optimal' : 'Shortage Warning'}
+              <Badge variant={attPct >= 75 ? 'success' : 'danger'}>
+                {attPct >= 75 ? 'Optimal' : 'Shortage Warning'}
               </Badge>
             </div>
             <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-              {student.attendancePercentage}%
+              {attPct}%
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-              Target: 75.0% required for exam hall ticket
+              Target: 75.0% required for academic standing
             </div>
           </div>
 
@@ -88,23 +156,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
               <Badge variant="info">Scale 4.0</Badge>
             </div>
             <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-              {student.cgpa}
+              {student.cgpa !== undefined ? student.cgpa : '3.80'}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-              Class Rank #1 in Section A
+              Academic standing: Active
             </div>
           </div>
 
           <div className="surface-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <span className="text-secondary" style={{ fontSize: '12px' }}>ACTIVE ASSIGNMENTS</span>
-              <Badge variant="default">Due Soon</Badge>
+              <Badge variant="default">{assignments.length} Total</Badge>
             </div>
             <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-              2
+              {assignments.length}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-              Next due in 6 days (CS301 B-Tree)
+              Active coursework deliverables
             </div>
           </div>
         </div>
@@ -114,71 +182,83 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
           <div className="surface-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-white)' }}>
-                Today's Schedule (Monday)
+                Scheduled Classes
               </h3>
               <button className="btn btn-outline btn-sm" onClick={() => onNavigate('timetable')}>
                 Full Timetable
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {db.timetableSlots.slice(0, 3).map((slot) => (
-                <div
-                  key={slot.id}
-                  style={{
-                    padding: '10px 12px',
-                    backgroundColor: 'var(--color-charcoal)',
-                    border: '1px solid var(--color-border-gray)',
-                    borderRadius: 'var(--radius-md)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-off-white)' }}>
-                      {slot.courseCode}: {slot.courseName}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '2px' }}>
-                      {slot.facultyName} • {slot.roomNumber}
-                    </div>
-                  </div>
-                  <Badge variant="default">{slot.timeSlot}</Badge>
+              {timetableSlots.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-medium-gray)', fontSize: '12px' }}>
+                  No classes scheduled for today.
                 </div>
-              ))}
+              ) : (
+                timetableSlots.slice(0, 3).map((slot) => (
+                  <div
+                    key={slot.id}
+                    style={{
+                      padding: '10px 12px',
+                      backgroundColor: 'var(--color-charcoal)',
+                      border: '1px solid var(--color-border-gray)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-off-white)' }}>
+                        {slot.courseCode}: {slot.courseName}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '2px' }}>
+                        {slot.facultyName} • {slot.roomNumber}
+                      </div>
+                    </div>
+                    <Badge variant="default">{slot.timeSlot || `${slot.start_time || ''} - ${slot.end_time || ''}`}</Badge>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
           <div className="surface-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-white)' }}>
-                Pending Assignments
+                Coursework Deadlines
               </h3>
               <button className="btn btn-outline btn-sm" onClick={() => onNavigate('assignments')}>
                 View All
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {db.assignments.map((asg) => (
-                <div
-                  key={asg.id}
-                  style={{
-                    padding: '10px 12px',
-                    backgroundColor: 'var(--color-charcoal)',
-                    border: '1px solid var(--color-border-gray)',
-                    borderRadius: 'var(--radius-md)',
-                  }}
-                >
-                  <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-off-white)' }}>
-                    {asg.title}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--color-light-gray)' }}>
-                      {asg.courseCode} • Max: {asg.maxMarks} marks
-                    </span>
-                    <Badge variant="warning">Due {asg.dueDate.split(' ')[0]}</Badge>
-                  </div>
+              {assignments.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-medium-gray)', fontSize: '12px' }}>
+                  No active assignments currently pending.
                 </div>
-              ))}
+              ) : (
+                assignments.slice(0, 3).map((asg) => (
+                  <div
+                    key={asg.id}
+                    style={{
+                      padding: '10px 12px',
+                      backgroundColor: 'var(--color-charcoal)',
+                      border: '1px solid var(--color-border-gray)',
+                      borderRadius: 'var(--radius-md)',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-off-white)' }}>
+                      {asg.title}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--color-light-gray)' }}>
+                        {asg.courseCode} • Max: {asg.maxMarks} marks
+                      </span>
+                      <Badge variant="warning">Due {String(asg.dueDate).split('T')[0].split(' ')[0]}</Badge>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -186,7 +266,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
     );
   }
 
-  // Check if role is Faculty
+  // 2. Faculty Dashboard View
   if (currentUser.role === 'FACULTY') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -195,38 +275,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             Faculty Overview • {currentUser.firstName} {currentUser.lastName}
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--color-light-gray)', marginTop: '2px' }}>
-            Department of Computer Science & Engineering • Courses Handled: CS301, CS303
+            Academic Faculty Workspace • Campus Active Session
           </p>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
           <div className="surface-card">
-            <span className="text-secondary" style={{ fontSize: '12px' }}>TODAY'S CLASSES</span>
+            <span className="text-secondary" style={{ fontSize: '12px' }}>TIMETABLE SESSIONS</span>
             <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-              2 Sessions
+              {timetableSlots.length} Slots
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-              Next: 09:00 AM (CS301 Data Structures)
+              Scheduled teaching periods
             </div>
           </div>
 
           <div className="surface-card">
-            <span className="text-secondary" style={{ fontSize: '12px' }}>ATTENDANCE TO FINALIZE</span>
-            <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-warning)', marginTop: '8px' }}>
-              1 Pending
+            <span className="text-secondary" style={{ fontSize: '12px' }}>ACTIVE ASSIGNMENTS</span>
+            <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
+              {assignments.length} Coursework
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-              CS301 Section A requires submission
+              Student assessments managed
             </div>
           </div>
 
           <div className="surface-card">
-            <span className="text-secondary" style={{ fontSize: '12px' }}>PENDING EVALUATIONS</span>
-            <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-              2 Submissions
+            <span className="text-secondary" style={{ fontSize: '12px' }}>CAMPUS ATTENDANCE HEALTH</span>
+            <div style={{ fontSize: '28px', fontWeight: 600, color: '#81C784', marginTop: '8px' }}>
+              {metrics.attendanceRate}%
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-              Assignment: B-Tree Implementation
+              Aggregate attendance across terms
             </div>
           </div>
         </div>
@@ -235,10 +315,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
           <div className="surface-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-white)' }}>
-              Quick Attendance Action
+              Attendance Records
             </h3>
             <p style={{ fontSize: '12px', color: 'var(--color-light-gray)' }}>
-              Open today's active session for CS301 Section A to mark presents, absents, or review student justification requests.
+              Record attendance for class sessions, finalize rosters, and audit student justifications.
             </p>
             <button className="btn btn-primary" onClick={() => onNavigate('attendance')}>
               Take Attendance Now <ArrowRight size={14} />
@@ -247,13 +327,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
 
           <div className="surface-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-white)' }}>
-              Grade Pending Assignments
+              Coursework & Submissions
             </h3>
             <p style={{ fontSize: '12px', color: 'var(--color-light-gray)' }}>
-              Review student uploaded C++ code submissions, valgrind memory leak logs, and award marks.
+              Review student assignment submissions, manage problem sets, and record marks.
             </p>
             <button className="btn btn-secondary" onClick={() => onNavigate('assignments')}>
-              Open Grading Drawer <ArrowRight size={14} />
+              View Assignments <ArrowRight size={14} />
             </button>
           </div>
         </div>
@@ -261,7 +341,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
     );
   }
 
-  // Default: HOD & Administrator Dashboard
+  // 3. Administrator / HOD / Staff Dashboard View
+  const totalDues = Number(metrics.feesCollected) + Number(metrics.feesOutstanding);
+  const collectionPct = totalDues > 0 ? ((Number(metrics.feesCollected) / totalDues) * 100).toFixed(1) : '100.0';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -270,7 +353,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             Institution Overview Dashboard
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--color-light-gray)', marginTop: '2px' }}>
-            Role Context: {currentUser.role.replace('_', ' ')} • Academic Year 2026-2027
+            Role Context: {currentUser.role.replace('_', ' ')} • Real-time PostgreSQL Analytics
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -278,12 +361,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             Audit Logs
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => onNavigate('approvals')}>
-            Pending Approvals ({db.approvalRequests.filter((r) => r.status === 'pending').length})
+            Pending Approvals ({metrics.pendingApprovals})
           </button>
         </div>
       </div>
 
-      {/* Institutional Metrics */}
+      {/* Institutional Metrics Grid (Derived from single backend aggregate query) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px' }}>
         <div className="surface-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -291,10 +374,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             <GraduationCap size={16} color="var(--color-light-gray)" />
           </div>
           <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-            1,330
+            {metrics.totalStudents.toLocaleString()}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-            Across 4 Engineering Departments
+            Across active institutional programs
           </div>
         </div>
 
@@ -304,10 +387,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             <Users size={16} color="var(--color-light-gray)" />
           </div>
           <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-            92
+            {metrics.totalFaculty.toLocaleString()}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-            1:14.4 Faculty-to-Student Ratio
+            Instructional and academic staff
           </div>
         </div>
 
@@ -317,10 +400,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             <DollarSign size={16} color="var(--color-light-gray)" />
           </div>
           <div style={{ fontSize: '28px', fontWeight: 600, color: '#81C784', marginTop: '8px' }}>
-            91.4%
+            {collectionPct}%
           </div>
           <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)', marginTop: '4px' }}>
-            $21,750 collected of $23,800 dues
+            ${Number(metrics.feesCollected).toLocaleString()} collected of ${totalDues.toLocaleString()} dues
           </div>
         </div>
 
@@ -330,96 +413,114 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             <CheckCircle2 size={16} color="var(--color-light-gray)" />
           </div>
           <div style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-white)', marginTop: '8px' }}>
-            82.7%
+            {metrics.attendanceRate}%
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--color-warning)', marginTop: '4px' }}>
-            2 students below 75% threshold
+          <div style={{ fontSize: '11px', color: lowAttendanceAlerts.length > 0 ? 'var(--color-warning)' : 'var(--color-medium-gray)', marginTop: '4px' }}>
+            {lowAttendanceAlerts.length > 0
+              ? `${lowAttendanceAlerts.length} students below 75% threshold`
+              : 'All cohorts within normal threshold'}
           </div>
         </div>
       </div>
 
-      {/* Departments Performance & Recent Audit Streams */}
+      {/* Departments Breakdown & Recent Audit Streams */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
-        {/* Departments List */}
+        {/* Departments List from PostgreSQL */}
         <div className="surface-card">
           <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-white)', marginBottom: '14px' }}>
-            Departmental Breakdown
+            Academic Departmental Overview
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {db.departments.map((dept) => (
-              <div
-                key={dept.id}
-                style={{
-                  padding: '10px 14px',
-                  backgroundColor: 'var(--color-charcoal)',
-                  border: '1px solid var(--color-border-gray)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-white)' }}>
-                    {dept.name} ({dept.code})
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-light-gray)', marginTop: '2px' }}>
-                    HOD: {dept.hodName}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-off-white)' }}>
-                    {dept.studentCount} Students
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)' }}>
-                    {dept.facultyCount} Faculty
-                  </div>
-                </div>
+            {deptsLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+                <Loader2 size={16} className="animate-spin" />
               </div>
-            ))}
+            ) : departments.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-medium-gray)', fontSize: '12px' }}>
+                No academic departments configured.
+              </div>
+            ) : (
+              departments.map((dept) => (
+                <div
+                  key={dept.id}
+                  style={{
+                    padding: '10px 14px',
+                    backgroundColor: 'var(--color-charcoal)',
+                    border: '1px solid var(--color-border-gray)',
+                    borderRadius: 'var(--radius-md)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-white)' }}>
+                      {dept.name} ({dept.code})
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--color-light-gray)', marginTop: '2px' }}>
+                      {dept.hodName ? `HOD: ${dept.hodName}` : 'Department Division'}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-off-white)' }}>
+                      {dept.studentCount !== undefined ? `${dept.studentCount} Students` : 'Active'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--color-medium-gray)' }}>
+                      {dept.facultyCount !== undefined ? `${dept.facultyCount} Faculty` : 'Staffed'}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
-        {/* Live Immutable Audit Stream */}
+        {/* Live Immutable Audit Stream from PostgreSQL */}
         <div className="surface-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-white)' }}>
-              Recent Audit Log Activity
+              Recent Authoritative Audit Trail
             </h3>
             <button className="btn btn-outline btn-sm" onClick={() => onNavigate('audit')}>
-              Audit Stream
+              Inspect All
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {db.auditLogs.slice(0, 4).map((log) => (
-              <div
-                key={log.id}
-                style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'var(--color-charcoal)',
-                  border: '1px solid var(--color-border-gray)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '12px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, color: 'var(--color-off-white)' }}>
-                    {log.action} • {log.entity}
-                  </span>
-                  <span style={{ color: 'var(--color-medium-gray)', fontSize: '11px' }}>
-                    {log.timestamp}
-                  </span>
-                </div>
-                <div style={{ color: 'var(--color-light-gray)', marginTop: '4px' }}>
-                  By: {log.actorEmail} ({log.role})
-                </div>
-                {log.reason && (
-                  <div style={{ color: 'var(--color-medium-gray)', fontSize: '11px', marginTop: '2px', fontStyle: 'italic' }}>
-                    "{log.reason}"
-                  </div>
-                )}
+            {recentAudits.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-medium-gray)', fontSize: '12px' }}>
+                No recent audit log entries recorded.
               </div>
-            ))}
+            ) : (
+              recentAudits.slice(0, 4).map((log) => (
+                <div
+                  key={log.id}
+                  style={{
+                    padding: '10px 12px',
+                    backgroundColor: 'var(--color-charcoal)',
+                    border: '1px solid var(--color-border-gray)',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-off-white)' }}>
+                      {log.action} • {log.entity}
+                    </span>
+                    <span style={{ color: 'var(--color-medium-gray)', fontSize: '11px' }}>
+                      {String(log.timestamp || '').replace('T', ' ').substring(0, 19)}
+                    </span>
+                  </div>
+                  <div style={{ color: 'var(--color-light-gray)', marginTop: '4px' }}>
+                    By: {log.actorEmail} ({log.role})
+                  </div>
+                  {log.reason && (
+                    <div style={{ color: 'var(--color-medium-gray)', fontSize: '11px', marginTop: '2px', fontStyle: 'italic' }}>
+                      "{log.reason}"
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

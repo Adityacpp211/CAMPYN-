@@ -477,6 +477,61 @@ export class StudentRepository {
       return { transferId, studentId, fromSectionId, toSectionId, reason };
     });
   }
+
+  async updateStudent(
+    studentId: string,
+    institutionId: string,
+    input: UpdateStudentInput
+  ): Promise<any> {
+    return await withTransaction(async (tx) => {
+      const stuRes = await tx.query(`
+        SELECT s.*, u.id as user_id, u.first_name, u.last_name, u.phone as user_phone
+        FROM students s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.id = $1 AND (s.institution_id = $2 OR u.institution_id = $2) AND s.deleted_at IS NULL
+      `, [studentId, institutionId]);
+
+      if (stuRes.rows.length === 0) {
+        return null;
+      }
+
+      const existing = stuRes.rows[0];
+
+      // Update users table if name/phone changed
+      if (input.firstName !== undefined || input.lastName !== undefined || input.phone !== undefined) {
+        await tx.query(`
+          UPDATE users
+          SET
+            first_name = COALESCE($1, first_name),
+            last_name = COALESCE($2, last_name),
+            phone = COALESCE($3, phone),
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $4
+        `, [input.firstName || null, input.lastName || null, input.phone || null, existing.user_id]);
+      }
+
+      // Update students table
+      const updatedRes = await tx.query(`
+        UPDATE students
+        SET
+          blood_group = COALESCE($1, blood_group),
+          guardian_name = COALESCE($2, guardian_name),
+          guardian_phone = COALESCE($3, guardian_phone),
+          academic_status = COALESCE($4, academic_status),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $5
+        RETURNING *
+      `, [
+        input.bloodGroup || null,
+        input.guardianName || null,
+        input.guardianPhone || null,
+        input.academicStatus || null,
+        studentId,
+      ]);
+
+      return updatedRes.rows[0];
+    });
+  }
 }
 
 
